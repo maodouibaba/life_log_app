@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build iOS .ipa
+    name: Build iOS .app
     runs-on: macos-latest
 
     steps:
@@ -23,16 +23,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS
-        run: flutter build ios --release --no-codesign
+      - name: Build iOS (debug mode, for sideloading)
+        run: flutter build ios --debug --no-codesign
 
-      - name: Create .ipa with xcrun
+      - name: Create .ipa
         run: |
+          cd build/ios/iphoneos
           mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          xcrun -sdk iphoneos ldid -S Payload/Runner.app/Runner 2>/dev/null || true
-          zip -r life-log-app.ipa Payload/
-          rm -rf Payload
+          cp -r Runner.app Payload/
+          zip -r ../../../life-log-app.ipa Payload/
 
       - name: Upload .ipa
         uses: actions/upload-artifact@v4
