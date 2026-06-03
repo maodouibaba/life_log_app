@@ -1,0 +1,72 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生活记录 App 界面预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f7; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+  .device { width: 375px; background: white; border-radius: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); overflow: hidden; }
+  .status-bar { padding: 12px 20px 0; font-size: 12px; color: #333; display: flex; justify-content: space-between; }
+  .app-bar { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
+  .app-bar .title { font-size: 17px; font-weight: 600; }
+  .app-bar .actions { display: flex; gap: 16px; color: #007aff; font-size: 14px; }
+  .content { padding: 12px; min-height: 400px; }
+  .tag { display: inline-block; background: #e8f5e9; color: #2e7d32; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin: 2px; }
+  .day-group { margin-bottom: 16px; }
+  .day-header { display: flex; align-items: center; gap: 8px; padding: 8px 0; color: #007aff; font-weight: 600; font-size: 15px; border-bottom: 1px solid #f0f0f0; }
+  .day-count { background: #e3f2fd; color: #1565c0; font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .entry { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f8f8f8; }
+  .entry-time { font-size: 12px; color: #999; min-width: 40px; }
+  .entry-text { font-size: 15px; line-height: 1.4; margin-bottom: 4px; }
+  .fab { position: relative; width: 56px; height: 56px; background: #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 28px; margin: 0 auto 20px; box-shadow: 0 4px 12px rgba(0,122,255,0.3); }
+  .section-title { font-size: 13px; color: #666; padding: 8px 16px; background: #f8f8f8; }
+  .label-tag { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #f0f0f0; font-size: 15px; }
+  .label-tree { padding-left: 24px; }
+  .label-tree-2 { padding-left: 48px; }
+  .screen-label { text-align: center; color: #666; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="device">
+  <div class="status-bar"><span>9:41</span><span>📶 🔋</span></div>
+  <div class="app-bar"><span class="title">生活记录</span><div class="actions">☰ 🏷️ 📥</div></div>
+  <div class="content">
+    <div class="day-group">
+      <div class="day-header">📅 2026年6月3日 周三 <span class="day-count">3 条</span></div>
+      <div class="entry">
+        <div class="entry-time">14:30</div>
+        <div class="entry-text">今天去跑了5公里，感觉不错</div>
+        <div><span class="tag">🏃 运动</span><span class="tag">跑步</span></div>
+      </div>
+      <div class="entry">
+        <div class="entry-time">12:15</div>
+        <div class="entry-text">中午做了红烧肉</div>
+        <div><span class="tag">🍽️ 饮食</span><span class="tag">午餐</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="fab">+</div>
+</div>
+<div class="screen-label">🏠 首页·时间线（按天展开/收起）</div>
+
+<div class="device" style="margin-top:20px;">
+  <div class="status-bar"><span>9:41</span><span>📶 🔋</span></div>
+  <div class="app-bar"><span class="title">新记录</span><div class="actions">保存</div></div>
+  <div class="content">
+    <div style="background:#f5f5f7;border-radius:12px;padding:12px;min-height:60px;color:#999;margin-bottom:12px;">记录今天的生活...</div>
+    <div style="font-size:14px;color:#666;margin-bottom:8px;">选择标签</div>
+    <div class="label-tag"><span>▶</span> 生活</div>
+    <div class="label-tag label-tree"><span>▶</span> 饮食</div>
+    <div class="label-tag label-tree-2"><span>○</span> 早餐</div>
+    <div class="label-tag label-tree-2"><span>●</span> <b>午餐</b> ✓</div>
+    <div class="label-tag label-tree"><span>▶</span> 运动 <span style="margin-left:auto;color:#007aff;">+</span></div>
+    <div class="label-tag label-tree"><span>▶</span> 作息</div>
+  </div>
+</div>
+<div class="screen-label">✏️ 写记录·选标签/新建标签</div>
+
+</body>
+</html>
