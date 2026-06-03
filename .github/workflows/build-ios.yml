@@ -3,7 +3,7 @@
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,15 +26,16 @@ jobs:
       - name: Build iOS
         run: flutter build ios --release --no-codesign
 
-      - name: Create .ipa
+      - name: Create .ipa with xcrun
         run: |
-          mkdir -p build/ios/iphoneos/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
-          cd build/ios/iphoneos
-          zip -r app.ipa Payload
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          xcrun -sdk iphoneos ldid -S Payload/Runner.app/Runner 2>/dev/null || true
+          zip -r life-log-app.ipa Payload/
+          rm -rf Payload
 
       - name: Upload .ipa
         uses: actions/upload-artifact@v4
         with:
           name: life-log-app.ipa
-          path: build/ios/iphoneos/app.ipa
+          path: life-log-app.ipa
