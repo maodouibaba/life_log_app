@@ -31,21 +31,55 @@ class _ListViewPageState extends State<ListViewPage> {
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
-    _allTags = await _db.getAllTags();
+    try {
+      _allTags = await _db.getAllTags().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('加载标签超时');
+          return [];
+        },
+      );
 
-    List<Entry> entries;
-    if (_filterTagId != null) {
-      entries = await _db.getEntriesByTag(_filterTagId!);
-    } else if (_startDate != null && _endDate != null) {
-      entries = await _db.getEntriesByDateRange(_startDate!, _endDate!);
-    } else {
-      entries = await _db.getAllEntries();
+      List<Entry> entries;
+      if (_filterTagId != null) {
+        entries = await _db.getEntriesByTag(_filterTagId!).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('按标签查询超时');
+            return [];
+          },
+        );
+      } else if (_startDate != null && _endDate != null) {
+        entries = await _db.getEntriesByDateRange(_startDate!, _endDate!).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('按日期查询超时');
+            return [];
+          },
+        );
+      } else {
+        entries = await _db.getAllEntries().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('加载所有记录超时');
+            return [];
+          },
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('加载数据失败：\');
+      if (!mounted) return;
+      setState(() {
+        _entries = [];
+        _loading = false;
+      });
     }
-
-    setState(() {
-      _entries = entries;
-      _loading = false;
-    });
   }
 
   Future<void> _pickDateRange() async {

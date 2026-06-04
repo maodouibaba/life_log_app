@@ -87,11 +87,25 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       return;
     }
 
-    await _db.createEntry(content, tagIds: _selectedTagIds.toList());
-    if (mounted) {
-      Navigator.pop(context, true);
+    try {
+      await _db.createEntry(content, tagIds: _selectedTagIds.toList()).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('保存记录超时');
+          return null;
+        },
+      );
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      debugPrint('保存记录失败：$e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败：$e')),
+        );
+      }
     }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -320,4 +334,6 @@ class _TagSelectorNode extends StatelessWidget {
     );
   }
 }
+
+
 
