@@ -24,7 +24,11 @@ jobs:
         run: flutter pub get
 
       - name: Build iOS (debug mode, for sideloading)
-        run: flutter build ios --debug --no-codesign
+        run: |
+          # 设置空 Development Team 避免签名错误
+          # debug 模式 + no-codesign 不需要真实证书
+          export DEVELOPMENT_TEAM=""
+          flutter build ios --debug --no-codesign
 
       - name: Create .ipa
         run: |
@@ -38,4 +42,3 @@ jobs:
         with:
           name: life-log-app.ipa
           path: life-log-app.ipa
-
