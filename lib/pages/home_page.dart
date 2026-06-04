@@ -28,11 +28,27 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadEntries() async {
     setState(() => _loading = true);
-    final entries = await _db.getAllEntries();
-    setState(() {
-      _entries = entries;
-      _loading = false;
-    });
+    try {
+      final entries = await _db.getAllEntries().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('加载记录超时');
+          return [];
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('加载记录失败：$e');
+      if (!mounted) return;
+      setState(() {
+        _entries = [];
+        _loading = false;
+      });
+    }
   }
 
   // 按天分组
@@ -340,6 +356,8 @@ class _EntryCard extends StatelessWidget {
     );
   }
 }
+
+
 
 
 

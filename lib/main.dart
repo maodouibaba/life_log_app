@@ -7,7 +7,12 @@ void main() async {
 
   // 初始化数据库（创建或打开）
   final db = AppDatabase();
-  await db.database;
+  try {
+    await db.database;
+    debugPrint('数据库初始化成功');
+  } catch (e) {
+    debugPrint('数据库初始化失败：$e');
+  }
 
   runApp(const LifeLogApp());
 }
