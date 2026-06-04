@@ -23,15 +23,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS (debug mode, for sideloading)
+      - name: Build iOS
         run: |
-          # 在编译前注入空 DEVELOPMENT_TEAM 到所有 buildSettings
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = com.selfapp.lifeLogApp;/PRODUCT_BUNDLE_IDENTIFIER = com.selfapp.lifeLogApp;\n\t\t\t\tDEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          flutter build ios --debug --no-codesign
+          # 直接用 xcodebuild 编译，完全禁用签名
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+            -configuration Debug -sdk iphoneos -arch arm64 \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath ../build/ios_derived
 
       - name: Create .ipa
         run: |
-          cd build/ios/iphoneos
+          # 从 DerivedData 找到 .app
+          find build/ios_derived -name "Runner.app" -type d
+          app_path=$(find build/ios_derived -name "Runner.app" -type d | head -1)
+          echo "App found at: $app_path"
+          dir_path=$(dirname "$app_path")
+          cd "$dir_path"
           mkdir -p Payload
           cp -r Runner.app Payload/
           zip -r ../../../life-log-app.ipa Payload/
