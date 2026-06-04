@@ -172,13 +172,12 @@ class _HomePageState extends State<HomePage> {
                 ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final result = await Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const EntryEditorPage()),
           );
-          if (result == true) {
-            _loadEntries();
-          }
+          // 不管是否保存成功，返回时都刷新记录
+          _loadEntries();
         },
         child: const Icon(Icons.add),
       ),

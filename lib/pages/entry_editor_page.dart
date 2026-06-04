@@ -89,8 +89,18 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     } catch (e) {
       debugPrint('保存记录失败：$e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：$e')),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('保存失败'),
+            content: Text('$e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
         );
       }
     }
