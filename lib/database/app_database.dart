@@ -163,11 +163,15 @@ class AppDatabase {
     );
     final entries = maps.map((map) => Entry.fromMap(map)).toList();
 
-    // 为每条记录加载标签
+    // 为每条记录加载标签（单条失败不影响其他记录）
     for (final entry in entries) {
-      entry.tags
-        ..clear()
-        ..addAll(await _getTagsForEntry(entry.id!));
+      try {
+        entry.tags
+          ..clear()
+          ..addAll(await _getTagsForEntry(entry.id!));
+      } catch (e) {
+        debugPrint('加载记录 #${entry.id} 标签失败：$e');
+      }
     }
 
     return entries;
@@ -185,9 +189,13 @@ class AppDatabase {
     final entries = maps.map((map) => Entry.fromMap(map)).toList();
 
     for (final entry in entries) {
-      entry.tags
-        ..clear()
-        ..addAll(await _getTagsForEntry(entry.id!));
+      try {
+        entry.tags
+          ..clear()
+          ..addAll(await _getTagsForEntry(entry.id!));
+      } catch (e) {
+        debugPrint('加载记录 #${entry.id} 标签失败：$e');
+      }
     }
 
     return entries;
@@ -205,9 +213,13 @@ class AppDatabase {
     final entries = maps.map((map) => Entry.fromMap(map)).toList();
 
     for (final entry in entries) {
-      entry.tags
-        ..clear()
-        ..addAll(await _getTagsForEntry(entry.id!));
+      try {
+        entry.tags
+          ..clear()
+          ..addAll(await _getTagsForEntry(entry.id!));
+      } catch (e) {
+        debugPrint('加载记录 #${entry.id} 标签失败：$e');
+      }
     }
 
     return entries;

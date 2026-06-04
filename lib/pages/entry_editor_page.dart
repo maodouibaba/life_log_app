@@ -24,6 +24,9 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   List<Tag> _allTags = [];
   List<Tag> _rootTags = [];
 
+  // 保存状态
+  bool _saving = false;
+
   @override
   void initState() {
     super.initState();
@@ -80,15 +83,17 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       return;
     }
 
+    setState(() => _saving = true);
+
     try {
-      await _db.createEntry(content, tagIds: _selectedTagIds.toList())
-          .timeout(const Duration(seconds: 10));
+      await _db.createEntry(content, tagIds: _selectedTagIds.toList());
       if (mounted) {
         Navigator.pop(context, true);
       }
     } catch (e) {
       debugPrint('保存记录失败：$e');
       if (mounted) {
+        setState(() => _saving = false);
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -114,10 +119,15 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       appBar: AppBar(
         title: const Text('新记录'),
         actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text('保存'),
-          ),
+          _saving
+              ? const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : TextButton(
+                  onPressed: _save,
+                  child: const Text('保存'),
+                ),
         ],
       ),
       body: Column(
