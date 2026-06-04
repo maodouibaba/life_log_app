@@ -14,9 +14,10 @@ class Entry {
     required this.content,
     DateTime? createdAt,
     DateTime? updatedAt,
-    this.tags = const [],
+    List<Tag>? tags,
   })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+        updatedAt = updatedAt ?? DateTime.now(),
+        tags = tags ?? [];
 
   /// 从数据库 Map 创建（不含 tags）
   factory Entry.fromMap(Map<String, dynamic> map) {

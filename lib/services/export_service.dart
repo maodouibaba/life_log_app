@@ -12,29 +12,60 @@ class ExportService {
   Future<String> exportToExcel() async {
     final data = await _db.getAllEntriesWithTagPaths();
 
+    // 第一遍扫描：找出标签路径最大层级数
+    int maxDepth = 0;
+    for (final row in data) {
+      for (final tagPath in row['tags'] as List<String>) {
+        final parts = tagPath.split(' > ');
+        if (parts.length > maxDepth) maxDepth = parts.length;
+      }
+    }
+    if (maxDepth == 0) maxDepth = 1; // 至少有层级1列
+
     final excel = Excel.createExcel();
     final sheet = excel['生活记录'];
 
     // 表头
-    sheet.appendRow([
-      '时间',
-      '内容',
-      '标签',
-    ]);
+    final header = <String>['时间', '内容'];
+    for (int i = 1; i <= maxDepth; i++) {
+      header.add('层级$i');
+    }
+    sheet.appendRow(header);
 
-    // 数据行
+    // 数据行：一个标签一行
     for (final row in data) {
-      sheet.appendRow([
-        _formatDateTime(row['created_at'] as DateTime),
-        row['content'] as String,
-        (row['tags'] as List<String>).join('; '),
-      ]);
+      final tags = row['tags'] as List<String>;
+      final dateTimeStr = _formatDateTime(row['created_at'] as DateTime);
+      final content = row['content'] as String;
+
+      if (tags.isEmpty) {
+        // 没有标签的记录也输出一行
+        sheet.appendRow([
+          dateTimeStr,
+          content,
+          ...List.filled(maxDepth, ''),
+        ]);
+      } else {
+        for (final tagPath in tags) {
+          final parts = tagPath.split(' > ');
+          // 补齐空位，使每行长度一致
+          final padded = List<String>.from(parts)
+            ..addAll(List.filled(maxDepth - parts.length, ''));
+          sheet.appendRow([
+            dateTimeStr,
+            content,
+            ...padded,
+          ]);
+        }
+      }
     }
 
     // 设置列宽
-    sheet.setColumnWidth(0, 25);  // 时间列
-    sheet.setColumnWidth(1, 60);  // 内容列
-    sheet.setColumnWidth(2, 40);  // 标签列
+    sheet.setColumnWidth(0, 25); // 时间列
+    sheet.setColumnWidth(1, 60); // 内容列
+    for (int i = 0; i < maxDepth; i++) {
+      sheet.setColumnWidth(i + 2, 18); // 层级列
+    }
 
     // 保存文件
     final dir = await getApplicationDocumentsDirectory();

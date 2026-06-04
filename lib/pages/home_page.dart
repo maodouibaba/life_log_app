@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import '../database/app_database.dart';
 import '../models/entry.dart';
 import 'entry_editor_page.dart';
@@ -89,10 +90,8 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           content: Text('导出成功：$filePath'),
           action: SnackBarAction(
-            label: '分享',
-            onPressed: () {
-                // Share.shareXFiles([XFile(filePath)], text: '生活记录导出');
-            },
+            label: '打开',
+            onPressed: () => OpenFilex.open(filePath),
           ),
         ),
       );

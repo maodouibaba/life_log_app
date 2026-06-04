@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../models/tag.dart';
 import '../database/app_database.dart';
 
@@ -14,7 +14,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   final AppDatabase _db = AppDatabase();
   final _contentController = TextEditingController();
 
-  // 已选标签 ID
+  // 已选标签 ID（含隐式选中的祖先标签）
   final Set<int> _selectedTagIds = {};
 
   // 标签树展开状态
@@ -37,6 +37,61 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     _allTags = await _db.getAllTags();
     _rootTags = await _db.getRootTags();
     setState(() {});
+  }
+
+  /// 获取某个标签及其所有祖先的 ID
+  Set<int> _getAncestorsInclusive(int tagId) {
+    final result = <int>{tagId};
+    int? currentId = tagId;
+    while (currentId != null) {
+      final matches = _allTags.where((t) => t.id == currentId);
+      if (matches.isEmpty) break;
+      final parentId = matches.first.parentId;
+      if (parentId != null) {
+        result.add(parentId);
+        currentId = parentId;
+      } else {
+        break;
+      }
+    }
+    return result;
+  }
+
+  /// 取消选中标签，同时清理无子标签选中的祖先
+  void _deselectTagCleanup(int tagId) {
+    _selectedTagIds.remove(tagId);
+
+    int? currentId = tagId;
+    while (currentId != null) {
+      final matches = _allTags.where((t) => t.id == currentId);
+      if (matches.isEmpty) break;
+      final parentId = matches.first.parentId;
+      if (parentId == null) break;
+
+      // 检查父标签是否有其他选中的子标签
+      final siblingIds = _allTags
+          .where((t) => t.parentId == parentId && t.id != currentId)
+          .map((t) => t.id!)
+          .toSet();
+
+      final hasOtherSelected =
+          _selectedTagIds.any((id) => siblingIds.contains(id));
+      if (hasOtherSelected) break;
+
+      _selectedTagIds.remove(parentId);
+      currentId = parentId;
+    }
+  }
+
+  void _toggleTag(Tag tag) {
+    final tagId = tag.id!;
+    setState(() {
+      if (_selectedTagIds.contains(tagId)) {
+        _deselectTagCleanup(tagId);
+      } else {
+        _selectedTagIds.addAll(_getAncestorsInclusive(tagId));
+      }
+    });
   }
 
   Future<void> _createAndSelectTag({int? parentId}) async {
@@ -67,8 +122,11 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     if (result != null && result.isNotEmpty) {
       final newTag = await _db.createTag(result, parentId: parentId);
       setState(() {
-        _selectedTagIds.add(newTag.id!);
-        _expandedTagIds.addAll([if (parentId != null) parentId]);
+        // 新建标签及其祖先自动选中
+        _selectedTagIds.addAll(_getAncestorsInclusive(newTag.id!));
+        if (parentId != null) {
+          _expandedTagIds.add(parentId);
+        }
       });
       await _loadTags();
     }
@@ -163,7 +221,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                   return Chip(
                     label: Text(tag.name, style: const TextStyle(fontSize: 13)),
                     deleteIcon: const Icon(Icons.close, size: 16),
-                    onDeleted: () => setState(() => _selectedTagIds.remove(id)),
+                    onDeleted: () => _toggleTag(tag),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   );
@@ -191,22 +249,41 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _rootTags.length,
+                    itemCount: _rootTags.length + 1, // +1 为"新建根标签"
                     itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: InkWell(
+                            onTap: () => _createAndSelectTag(),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.add_circle, size: 18, color: theme.colorScheme.primary),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '新建根标签',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       return _TagSelectorNode(
-                        tag: _rootTags[index],
+                        tag: _rootTags[index - 1],
                         allTags: _allTags,
                         selectedIds: _selectedTagIds,
                         expandedIds: _expandedTagIds,
-                        onToggle: (tagId) {
-                          setState(() {
-                            if (_selectedTagIds.contains(tagId)) {
-                              _selectedTagIds.remove(tagId);
-                            } else {
-                              _selectedTagIds.add(tagId);
-                            }
-                          });
-                        },
+                        onToggle: _toggleTag,
                         onToggleExpand: (tagId) {
                           setState(() {
                             if (_expandedTagIds.contains(tagId)) {
@@ -240,7 +317,7 @@ class _TagSelectorNode extends StatelessWidget {
   final List<Tag> allTags;
   final Set<int> selectedIds;
   final Set<int> expandedIds;
-  final Function(int) onToggle;
+  final Function(Tag) onToggle;
   final Function(int) onToggleExpand;
   final Function(int) onCreateChild;
   final int level;
@@ -286,7 +363,7 @@ class _TagSelectorNode extends StatelessWidget {
               else
                 const SizedBox(width: 28),
               InkWell(
-                onTap: () => onToggle(tag.id!),
+                onTap: () => onToggle(tag),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -343,6 +420,3 @@ class _TagSelectorNode extends StatelessWidget {
     );
   }
 }
-
-
-

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../models/tag.dart';
 import '../database/app_database.dart';
 
@@ -13,7 +13,7 @@ class TagManagerPage extends StatefulWidget {
 
 class _TagManagerPageState extends State<TagManagerPage> {
   final AppDatabase _db = AppDatabase();
-  List<Tag> _rootTags = [];
+  List<Tag> _allTags = [];
 
   @override
   void initState() {
@@ -22,9 +22,11 @@ class _TagManagerPageState extends State<TagManagerPage> {
   }
 
   Future<void> _loadTags() async {
-    final tags = await _db.getRootTags();
-    setState(() => _rootTags = tags);
+    final tags = await _db.getAllTags();
+    setState(() => _allTags = tags);
   }
+
+  List<Tag> _getRootTags() => _allTags.where((t) => t.parentId == null).toList();
 
   Future<void> _addTag({int? parentId}) async {
     final controller = TextEditingController();
@@ -112,6 +114,8 @@ class _TagManagerPageState extends State<TagManagerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final rootTags = _getRootTags();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('标签管理'),
@@ -123,7 +127,7 @@ class _TagManagerPageState extends State<TagManagerPage> {
           ),
         ],
       ),
-      body: _rootTags.isEmpty
+      body: rootTags.isEmpty
           ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -138,11 +142,11 @@ class _TagManagerPageState extends State<TagManagerPage> {
             )
           : ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: _rootTags.length,
+              itemCount: rootTags.length,
               itemBuilder: (context, index) {
                 return _TagTreeNode(
-                  tag: _rootTags[index],
-                  database: _db,
+                  tag: rootTags[index],
+                  allTags: _allTags,
                   onChanged: _loadTags,
                   onEdit: _editTag,
                   onDelete: _deleteTag,
@@ -157,7 +161,7 @@ class _TagManagerPageState extends State<TagManagerPage> {
 
 class _TagTreeNode extends StatefulWidget {
   final Tag tag;
-  final AppDatabase database;
+  final List<Tag> allTags;
   final VoidCallback onChanged;
   final Function(Tag) onEdit;
   final Function(Tag) onDelete;
@@ -166,7 +170,7 @@ class _TagTreeNode extends StatefulWidget {
 
   const _TagTreeNode({
     required this.tag,
-    required this.database,
+    required this.allTags,
     required this.onChanged,
     required this.onEdit,
     required this.onDelete,
@@ -179,23 +183,15 @@ class _TagTreeNode extends StatefulWidget {
 }
 
 class _TagTreeNodeState extends State<_TagTreeNode> {
-  List<Tag>? _children;
   bool _expanded = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadChildren();
-  }
-
-  Future<void> _loadChildren() async {
-    final children = await widget.database.getChildTags(widget.tag.id!);
-    setState(() => _children = children);
-  }
+  List<Tag> _getChildren() =>
+      widget.allTags.where((t) => t.parentId == widget.tag.id).toList();
 
   @override
   Widget build(BuildContext context) {
-        final hasChildren = _children != null && _children!.isNotEmpty;
+    final children = _getChildren();
+    final hasChildren = children.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,9 +241,9 @@ class _TagTreeNodeState extends State<_TagTreeNode> {
           ),
         ),
         if (_expanded && hasChildren)
-          ..._children!.map((child) => _TagTreeNode(
+          ...children.map((child) => _TagTreeNode(
                 tag: child,
-                database: widget.database,
+                allTags: widget.allTags,
                 onChanged: widget.onChanged,
                 onEdit: widget.onEdit,
                 onDelete: widget.onDelete,
@@ -258,6 +254,3 @@ class _TagTreeNodeState extends State<_TagTreeNode> {
     );
   }
 }
-
-
-
