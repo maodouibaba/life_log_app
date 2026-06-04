@@ -14,10 +14,8 @@ class DataMigrationPage extends StatefulWidget {
 
 class _DataMigrationPageState extends State<DataMigrationPage> {
   final AppDatabase _db = AppDatabase();
-  final _importController = TextEditingController();
   bool _exporting = false;
   bool _importing = false;
-  String? _lastExportPath;
 
   Future<void> _export() async {
     setState(() => _exporting = true);
@@ -26,12 +24,9 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final filePath = '${dir.path}/生活记录备份_$timestamp.json';
-      await File(filePath).writeAsString(json);
+      await File(filePath).writeAsString(json, flush: true);
 
-      setState(() {
-        _lastExportPath = filePath;
-        _exporting = false;
-      });
+      setState(() => _exporting = false);
 
       if (!mounted) return;
       showDialog(
@@ -63,15 +58,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     }
   }
 
-  Future<void> _import() async {
-    final jsonText = _importController.text.trim();
-    if (jsonText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先粘贴要导入的 JSON 数据')),
-      );
-      return;
-    }
-
+  Future<void> _importFromFile(String filePath) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -87,17 +74,17 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
     setState(() => _importing = true);
     try {
+      final jsonText = await File(filePath).readAsString();
       await _db.importFromJson(jsonText);
       setState(() => _importing = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('导入成功')),
+        SnackBar(content: Text('导入成功：$filePath')),
       );
-      _importController.clear();
     } catch (e) {
       setState(() => _importing = false);
       if (!mounted) return;
@@ -107,10 +94,13 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     }
   }
 
-  @override
-  void dispose() {
-    _importController.dispose();
-    super.dispose();
+  Future<List<FileSystemEntity>> _scanBackupFiles() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final files = dir.listSync();
+    return files
+        .where((f) => f is File && f.path.endsWith('.json'))
+        .toList()
+      ..sort((a, b) => -a.statSync().modified.compareTo(b.statSync().modified));
   }
 
   @override
@@ -139,7 +129,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text('将所有记录、标签、项目导出为 JSON 文件，用于备份或迁移到其他设备。'),
+                  const Text('将所有记录、标签、项目导出为 JSON 文件，用于备份或迁移。\n导出的文件会保存在 App 的文档目录中，可通过爱思助手或分享功能取出。'),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -151,11 +141,6 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                       label: Text(_exporting ? '导出中...' : '导出 JSON'),
                     ),
                   ),
-                  if (_lastExportPath != null) ...[
-                    const SizedBox(height: 8),
-                    Text('上次导出：$_lastExportPath',
-                        style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
-                  ],
                 ],
               ),
             ),
@@ -178,30 +163,81 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text('将之前导出的 JSON 内容粘贴到下方文本框，然后点击导入。导入后会替换全部现有数据。'),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _importController,
-                    maxLines: 8,
-                    decoration: InputDecoration(
-                      hintText: '在此粘贴 JSON 数据...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                    ),
+                  Text(
+                    '将备份的 .json 文件放入 App 的文档目录（可通过爱思助手"文件共享"操作），'
+                    '然后在下方选择文件导入。导入后会替换全部现有数据。',
+                    style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _importing ? null : _import,
-                      style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
-                      icon: _importing
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.file_download_outlined),
-                      label: Text(_importing ? '导入中...' : '导入'),
+                  if (_importing)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    ))
+                  else
+                    FutureBuilder<List<FileSystemEntity>>(
+                      future: _scanBackupFiles(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        final files = snapshot.data ?? [];
+                        if (files.isEmpty) {
+                          return Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(Icons.folder_open, size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 8),
+                                const Text('没有找到备份文件',
+                                    style: TextStyle(color: Colors.grey)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '请先将 .json 备份文件通过爱思助手放入 App 的文档目录',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('找到 ${files.length} 个备份文件：',
+                                style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant)),
+                            const SizedBox(height: 8),
+                            ...files.map((f) {
+                              final file = f as File;
+                              final name = file.path.split(Platform.pathSeparator).last;
+                              final size = _formatFileSize(file.statSync().size);
+                              final modTime = _formatModTime(file.statSync().modified);
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                child: ListTile(
+                                  leading: Icon(Icons.description, color: theme.colorScheme.primary),
+                                  title: Text(name, style: const TextStyle(fontSize: 14)),
+                                  subtitle: Text('$size · $modTime',
+                                      style: const TextStyle(fontSize: 11)),
+                                  trailing: TextButton(
+                                    onPressed: () => _importFromFile(file.path),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: theme.colorScheme.error,
+                                    ),
+                                    child: const Text('导入'),
+                                  ),
+                                  dense: true,
+                                ),
+                              );
+                            }),
+                          ],
+                        );
+                      },
                     ),
-                  ),
                 ],
               ),
             ),
@@ -209,5 +245,16 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         ],
       ),
     );
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String _formatModTime(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

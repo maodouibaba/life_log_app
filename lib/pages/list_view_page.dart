@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import '../database/app_database.dart';
 import '../models/entry.dart';
 import '../models/tag.dart';
+import '../models/project.dart';
 import 'entry_detail_page.dart';
 
 /// 列表视图页面
-/// 支持按日期范围、标签筛选，批量删除，批量替换标签
+/// 支持按日期范围、标签、项目筛选，批量删除，批量替换标签
 class ListViewPage extends StatefulWidget {
   const ListViewPage({super.key});
 
@@ -17,6 +18,7 @@ class _ListViewPageState extends State<ListViewPage> {
   final AppDatabase _db = AppDatabase();
   List<Entry> _entries = [];
   List<Tag> _allTags = [];
+  List<Project> _allProjects = [];
   bool _loading = true;
 
   // 多选模式
@@ -27,6 +29,7 @@ class _ListViewPageState extends State<ListViewPage> {
   DateTime? _startDate;
   DateTime? _endDate;
   int? _filterTagId;
+  int? _filterProjectId;
 
   @override
   void initState() {
@@ -41,6 +44,13 @@ class _ListViewPageState extends State<ListViewPage> {
         const Duration(seconds: 10),
         onTimeout: () {
           debugPrint('加载标签超时');
+          return [];
+        },
+      );
+      _allProjects = await _db.getAllProjects().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('加载项目超时');
           return [];
         },
       );
@@ -62,6 +72,16 @@ class _ListViewPageState extends State<ListViewPage> {
             return [];
           },
         );
+      } else if (_filterProjectId != null) {
+        // 按项目筛选：直接查所有记录再过滤
+        entries = await _db.getAllEntries().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('加载记录超时');
+            return [];
+          },
+        );
+        entries = entries.where((e) => e.projectId == _filterProjectId).toList();
       } else {
         entries = await _db.getAllEntries().timeout(
           const Duration(seconds: 10),
@@ -102,6 +122,7 @@ class _ListViewPageState extends State<ListViewPage> {
         _startDate = range.start;
         _endDate = range.end;
         _filterTagId = null;
+        _filterProjectId = null;
       });
       _loadData();
     }
@@ -118,6 +139,28 @@ class _ListViewPageState extends State<ListViewPage> {
         _filterTagId = selected;
         _startDate = null;
         _endDate = null;
+        _filterProjectId = null;
+      });
+      _loadData();
+    }
+  }
+
+  Future<void> _pickProject() async {
+    // 刷新项目列表
+    _allProjects = await _db.getAllProjects();
+    if (!mounted) return;
+
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => _ProjectPickerDialog(projects: _allProjects),
+    );
+
+    if (selected != null) {
+      setState(() {
+        _filterProjectId = selected;
+        _startDate = null;
+        _endDate = null;
+        _filterTagId = null;
       });
       _loadData();
     }
@@ -128,6 +171,7 @@ class _ListViewPageState extends State<ListViewPage> {
       _startDate = null;
       _endDate = null;
       _filterTagId = null;
+      _filterProjectId = null;
     });
     _loadData();
   }
@@ -136,6 +180,10 @@ class _ListViewPageState extends State<ListViewPage> {
     if (_filterTagId != null) {
       final tag = _allTags.firstWhere((t) => t.id == _filterTagId);
       return '标签：${tag.name}';
+    }
+    if (_filterProjectId != null) {
+      final p = _allProjects.firstWhere((p) => p.id == _filterProjectId);
+      return '项目：${p.name}';
     }
     if (_startDate != null && _endDate != null) {
       return '${_startDate!.month}/${_startDate!.day} - ${_endDate!.month}/${_endDate!.day}';
@@ -191,7 +239,6 @@ class _ListViewPageState extends State<ListViewPage> {
 
   Future<void> _batchReplaceTags() async {
     if (_selectedIds.isEmpty) return;
-    // 刷新最新标签列表
     _allTags = await _db.getAllTags();
     if (!mounted) return;
 
@@ -226,7 +273,8 @@ class _ListViewPageState extends State<ListViewPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasFilter = _filterTagId != null || (_startDate != null && _endDate != null);
+    final hasFilter = _filterTagId != null || _filterProjectId != null ||
+        (_startDate != null && _endDate != null);
 
     return Scaffold(
       appBar: AppBar(
@@ -283,15 +331,22 @@ class _ListViewPageState extends State<ListViewPage> {
                   active: _startDate != null,
                   onTap: _selectMode ? null : _pickDateRange,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _FilterChip(
                   icon: Icons.label,
                   label: _filterTagId != null ? '标签' : '标签',
                   active: _filterTagId != null,
                   onTap: _selectMode ? null : _pickTag,
                 ),
+                const SizedBox(width: 4),
+                _FilterChip(
+                  icon: Icons.folder_outlined,
+                  label: _filterProjectId != null ? '项目' : '项目',
+                  active: _filterProjectId != null,
+                  onTap: _selectMode ? null : _pickProject,
+                ),
                 if (hasFilter) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   TextButton(
                     onPressed: _selectMode ? null : _clearFilter,
                     child: const Text('清除'),
@@ -372,20 +427,45 @@ class _ListViewPageState extends State<ListViewPage> {
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ),
-                                if (entry.tags.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Wrap(
-                                      spacing: 4,
-                                      children: entry.tags.map((t) => Text(
-                                        t.name,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: theme.colorScheme.primary,
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    // 项目名
+                                    if (entry.projectName != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.primaryContainer,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            entry.projectName!,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: theme.colorScheme.onPrimaryContainer,
+                                            ),
+                                          ),
                                         ),
-                                      )).toList(),
-                                    ),
-                                  ),
+                                      ),
+                                    // 标签
+                                    if (entry.tags.isNotEmpty)
+                                      Expanded(
+                                        child: Wrap(
+                                          spacing: 4,
+                                          runSpacing: 2,
+                                          children: entry.tags.map((t) => Text(
+                                            t.name,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: theme.colorScheme.primary,
+                                            ),
+                                          )).toList(),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -498,6 +578,40 @@ class _TagPickerDialogState extends State<_TagPickerDialog> {
         ),
         if (isExpanded && hasChildren)
           ...children.map((c) => _buildTagNode(c, level + 1)),
+      ],
+    );
+  }
+}
+
+/// 项目选择弹窗（单选）
+class _ProjectPickerDialog extends StatelessWidget {
+  final List<Project> projects;
+  const _ProjectPickerDialog({required this.projects});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('选择项目'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: projects.isEmpty
+            ? const Text('暂无项目')
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: projects.length,
+                itemBuilder: (context, index) {
+                  final p = projects[index];
+                  return ListTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: Text(p.name),
+                    onTap: () => Navigator.pop(context, p.id),
+                    dense: true,
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
       ],
     );
   }
