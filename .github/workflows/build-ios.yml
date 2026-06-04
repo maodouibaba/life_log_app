@@ -24,7 +24,10 @@ jobs:
         run: flutter pub get
 
       - name: Build iOS (debug mode, for sideloading)
-        run: flutter build ios --debug --no-codesign
+        run: |
+          # 在编译前注入空 DEVELOPMENT_TEAM 到所有 buildSettings
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = com.selfapp.lifeLogApp;/PRODUCT_BUNDLE_IDENTIFIER = com.selfapp.lifeLogApp;\n\t\t\t\tDEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          flutter build ios --debug --no-codesign
 
       - name: Create .ipa
         run: |
