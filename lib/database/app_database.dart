@@ -1,6 +1,7 @@
 ﻿import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 import '../models/tag.dart';
 import '../models/entry.dart';
 import '../models/entry_tag.dart';
@@ -24,7 +25,7 @@ class AppDatabase {
     // 使用 path_provider 确保在 iOS 上获取正确的可写目录
     final appDir = await getApplicationDocumentsDirectory();
     final dbPath = appDir.path;
-    debugPrint('数据库路径：\');
+    debugPrint('数据库路径：$dbPath');
     final path = join(dbPath, 'life_log.db');
 
     return await openDatabase(

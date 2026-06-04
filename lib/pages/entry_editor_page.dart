@@ -36,13 +36,6 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     setState(() {});
   }
 
-
-
-
-
-  /// 获取标签的完整路径文本
-
-
   Future<void> _createAndSelectTag({int? parentId}) async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -88,13 +81,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     }
 
     try {
-      await _db.createEntry(content, tagIds: _selectedTagIds.toList()).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          debugPrint('保存记录超时');
-          return null;
-        },
-      );
+      await _db.createEntry(content, tagIds: _selectedTagIds.toList())
+          .timeout(const Duration(seconds: 10));
       if (mounted) {
         Navigator.pop(context, true);
       }
@@ -106,6 +94,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         );
       }
     }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +126,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
               ),
             ),
           ),

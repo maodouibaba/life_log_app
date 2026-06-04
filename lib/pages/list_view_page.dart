@@ -73,7 +73,7 @@ class _ListViewPageState extends State<ListViewPage> {
         _loading = false;
       });
     } catch (e) {
-      debugPrint('加载数据失败：\');
+      debugPrint('加载数据失败：$e');
       if (!mounted) return;
       setState(() {
         _entries = [];
