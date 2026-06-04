@@ -23,12 +23,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS (release mode, for sideloading)
-        run: flutter build ios --release --no-codesign
+      - name: Build iOS (debug mode, for sideloading)
+        run: flutter build ios --debug --no-codesign
 
       - name: Create .ipa
         run: |
-          cd build/ios/Release-iphoneos
+          cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
           zip -r ../../../life-log-app.ipa Payload/
@@ -38,3 +38,4 @@ jobs:
         with:
           name: life-log-app.ipa
           path: life-log-app.ipa
+
