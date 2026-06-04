@@ -1,11 +1,11 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../database/app_database.dart';
 import '../models/entry.dart';
 import '../models/tag.dart';
-import 'entry_editor_page.dart';
+import 'entry_detail_page.dart';
 
 /// 列表视图页面
-/// 支持按日期范围、标签筛选
+/// 支持按日期范围、标签筛选，批量删除，批量替换标签
 class ListViewPage extends StatefulWidget {
   const ListViewPage({super.key});
 
@@ -18,6 +18,10 @@ class _ListViewPageState extends State<ListViewPage> {
   List<Entry> _entries = [];
   List<Tag> _allTags = [];
   bool _loading = true;
+
+  // 多选模式
+  bool _selectMode = false;
+  final Set<int> _selectedIds = {};
 
   // 筛选条件
   DateTime? _startDate;
@@ -143,6 +147,82 @@ class _ListViewPageState extends State<ListViewPage> {
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  // ==================== 批量操作 ====================
+
+  void _toggleSelectMode() {
+    setState(() {
+      _selectMode = !_selectMode;
+      if (!_selectMode) _selectedIds.clear();
+    });
+  }
+
+  void _toggleItem(int id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _batchDelete() async {
+    if (_selectedIds.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('确定要删除选中的 ${_selectedIds.length} 条记录吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.deleteEntries(_selectedIds.toList());
+      _selectedIds.clear();
+      _loadData();
+    }
+  }
+
+  Future<void> _batchReplaceTags() async {
+    if (_selectedIds.isEmpty) return;
+    // 刷新最新标签列表
+    _allTags = await _db.getAllTags();
+    if (!mounted) return;
+
+    final tagIds = await showDialog<List<int>>(
+      context: context,
+      builder: (ctx) => _MultiTagPickerDialog(allTags: _allTags),
+    );
+    if (tagIds == null || !mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量替换标签'),
+        content: Text('将 ${_selectedIds.length} 条记录的标签替换为所选标签吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.batchReplaceTags(_selectedIds.toList(), tagIds);
+      if (!mounted) return;
+      _selectedIds.clear();
+      _loadData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -150,7 +230,45 @@ class _ListViewPageState extends State<ListViewPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('列表视图'),
+        title: Text(_selectMode ? '已选 ${_selectedIds.length} 条' : '列表视图'),
+        actions: [
+          if (_selectMode) ...[
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              tooltip: '全选',
+              onPressed: () {
+                setState(() {
+                  if (_selectedIds.length == _entries.length) {
+                    _selectedIds.clear();
+                  } else {
+                    _selectedIds.addAll(_entries.map((e) => e.id!));
+                  }
+                });
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.label, color: theme.colorScheme.primary),
+              tooltip: '替换标签',
+              onPressed: _batchReplaceTags,
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+              tooltip: '批量删除',
+              onPressed: _batchDelete,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: '取消选择',
+              onPressed: _toggleSelectMode,
+            ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.checklist),
+              tooltip: '选择',
+              onPressed: _toggleSelectMode,
+            ),
+          ],
+        ],
       ),
       body: Column(
         children: [
@@ -163,19 +281,19 @@ class _ListViewPageState extends State<ListViewPage> {
                   icon: Icons.date_range,
                   label: _startDate != null ? '日期范围' : '日期',
                   active: _startDate != null,
-                  onTap: _pickDateRange,
+                  onTap: _selectMode ? null : _pickDateRange,
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   icon: Icons.label,
                   label: _filterTagId != null ? '标签' : '标签',
                   active: _filterTagId != null,
-                  onTap: _pickTag,
+                  onTap: _selectMode ? null : _pickTag,
                 ),
                 if (hasFilter) ...[
                   const SizedBox(width: 8),
                   TextButton(
-                    onPressed: _clearFilter,
+                    onPressed: _selectMode ? null : _clearFilter,
                     child: const Text('清除'),
                   ),
                 ],
@@ -194,7 +312,7 @@ class _ListViewPageState extends State<ListViewPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Chip(
                 label: Text(_getFilterLabel()),
-                onDeleted: _clearFilter,
+                onDeleted: _selectMode ? null : _clearFilter,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
@@ -213,6 +331,31 @@ class _ListViewPageState extends State<ListViewPage> {
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final entry = _entries[index];
+                          final isSelected = _selectedIds.contains(entry.id);
+
+                          if (_selectMode) {
+                            return ListTile(
+                              leading: Checkbox(
+                                value: isSelected,
+                                onChanged: (_) => _toggleItem(entry.id!),
+                              ),
+                              title: Text(
+                                entry.content,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                _formatDateTime(entry.createdAt),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                              onTap: () => _toggleItem(entry.id!),
+                            );
+                          }
+
                           return ListTile(
                             title: Text(
                               entry.content,
@@ -230,15 +373,18 @@ class _ListViewPageState extends State<ListViewPage> {
                                   ),
                                 ),
                                 if (entry.tags.isNotEmpty)
-                                  Wrap(
-                                    spacing: 4,
-                                    children: entry.tags.map((t) => Text(
-                                      t.name,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: theme.colorScheme.primary,
-                                      ),
-                                    )).toList(),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Wrap(
+                                      spacing: 4,
+                                      children: entry.tags.map((t) => Text(
+                                        t.name,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      )).toList(),
+                                    ),
                                   ),
                               ],
                             ),
@@ -247,7 +393,7 @@ class _ListViewPageState extends State<ListViewPage> {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => EntryEditorPage(entry: entry),
+                                  builder: (_) => EntryDetailPage(entry: entry),
                                 ),
                               );
                               _loadData();
@@ -266,7 +412,7 @@ class _FilterChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool active;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _FilterChip({
     required this.icon,
@@ -286,7 +432,7 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-/// 标签选择弹窗
+/// 标签选择弹窗（单选，用于筛选）
 class _TagPickerDialog extends StatefulWidget {
   final List<Tag> allTags;
   const _TagPickerDialog({required this.allTags});
@@ -357,5 +503,93 @@ class _TagPickerDialogState extends State<_TagPickerDialog> {
   }
 }
 
+/// 多标签选择弹窗（用于批量替换）
+class _MultiTagPickerDialog extends StatefulWidget {
+  final List<Tag> allTags;
+  const _MultiTagPickerDialog({required this.allTags});
 
+  @override
+  State<_MultiTagPickerDialog> createState() => _MultiTagPickerDialogState();
+}
 
+class _MultiTagPickerDialogState extends State<_MultiTagPickerDialog> {
+  final Set<int> _selectedIds = {};
+  final Set<int> _expandedIds = {};
+  List<Tag> get _rootTags => widget.allTags.where((t) => t.parentId == null).toList();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('选择新标签（已选 ${_selectedIds.length}）'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: _rootTags.length,
+          itemBuilder: (context, index) {
+            return _buildTagNode(_rootTags[index], 0);
+          },
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: _selectedIds.isEmpty ? null : () => Navigator.pop(context, _selectedIds.toList()),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTagNode(Tag tag, int level) {
+    final children = widget.allTags.where((t) => t.parentId == tag.id).toList();
+    final hasChildren = children.isNotEmpty;
+    final isExpanded = _expandedIds.contains(tag.id);
+    final isSelected = _selectedIds.contains(tag.id);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: level * 20.0),
+          child: ListTile(
+            dense: true,
+            leading: Checkbox(
+              value: isSelected,
+              onChanged: (_) {
+                setState(() {
+                  if (isSelected) {
+                    _selectedIds.remove(tag.id!);
+                  } else {
+                    _selectedIds.add(tag.id!);
+                  }
+                });
+              },
+            ),
+            title: Text(tag.name, style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : null)),
+            onTap: hasChildren
+                ? () => setState(() {
+                      if (isExpanded) { _expandedIds.remove(tag.id!);
+                      } else { _expandedIds.add(tag.id!);
+                      }
+                    })
+                : () {
+                    setState(() {
+                      if (isSelected) {
+                        _selectedIds.remove(tag.id!);
+                      } else {
+                        _selectedIds.add(tag.id!);
+                      }
+                    });
+                  },
+            trailing: hasChildren
+                ? Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 16)
+                : null,
+          ),
+        ),
+        if (isExpanded && hasChildren)
+          ...children.map((c) => _buildTagNode(c, level + 1)),
+      ],
+    );
+  }
+}

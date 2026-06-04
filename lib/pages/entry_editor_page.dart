@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/tag.dart';
 import '../models/entry.dart';
+import '../models/project.dart';
 import '../database/app_database.dart';
 
 /// 新增/编辑记录页面
@@ -29,23 +30,28 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   List<Tag> _allTags = [];
   List<Tag> _rootTags = [];
 
+  // 项目
+  List<Project> _allProjects = [];
+  int? _selectedProjectId;
+
   // 保存状态
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadTags();
-    // 编辑模式：预填内容和标签
+    _loadData();
     if (_isEditMode) {
       _contentController.text = widget.entry!.content;
       _selectedTagIds.addAll(widget.entry!.tags.map((t) => t.id!).toSet());
+      _selectedProjectId = widget.entry!.projectId;
     }
   }
 
-  Future<void> _loadTags() async {
+  Future<void> _loadData() async {
     _allTags = await _db.getAllTags();
     _rootTags = await _db.getRootTags();
+    _allProjects = await _db.getAllProjects();
     setState(() {});
   }
 
@@ -133,12 +139,54 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       final newTag = await _db.createTag(result, parentId: parentId);
       setState(() {
         // 新建标签及其祖先自动选中
-        _selectedTagIds.addAll(_getAncestorsInclusive(newTag.id!));
+        // 直接用 parentId 追溯（新标签不在 _allTags 中）
+        final ids = <int>{newTag.id!};
         if (parentId != null) {
+          ids.add(parentId);
+          int? pid = parentId;
+          while (pid != null) {
+            final matches = _allTags.where((t) => t.id == pid);
+            if (matches.isEmpty) break;
+            pid = matches.first.parentId;
+            if (pid != null) ids.add(pid);
+          }
           _expandedTagIds.add(parentId);
         }
+        _selectedTagIds.addAll(ids);
       });
-      await _loadTags();
+      await _loadData();
+    }
+  }
+
+  Future<void> _createProject() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建项目'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入项目名称',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      final newProject = await _db.createProject(result);
+      setState(() => _selectedProjectId = newProject.id);
+      _allProjects = await _db.getAllProjects();
+      setState(() {});
     }
   }
 
@@ -159,9 +207,14 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           widget.entry!.id!,
           content,
           tagIds: _selectedTagIds.toList(),
+          projectId: _selectedProjectId,
         );
       } else {
-        await _db.createEntry(content, tagIds: _selectedTagIds.toList());
+        await _db.createEntry(
+          content,
+          tagIds: _selectedTagIds.toList(),
+          projectId: _selectedProjectId,
+        );
       }
       if (mounted) {
         Navigator.pop(context, true);
@@ -226,6 +279,55 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
               ),
             ),
           ),
+
+          // 项目选择区
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.folder_outlined, size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Text('项目', style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 18),
+                  onPressed: _createProject,
+                  tooltip: '新建项目',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (_allProjects.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ..._allProjects.map((p) => ChoiceChip(
+                        label: Text(p.name, style: const TextStyle(fontSize: 13)),
+                        selected: _selectedProjectId == p.id,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedProjectId = selected ? p.id : null;
+                          });
+                        },
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      )),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('暂无项目', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+            ),
+
+          const SizedBox(height: 12),
 
           // 已选标签展示
           if (_selectedTagIds.isNotEmpty)

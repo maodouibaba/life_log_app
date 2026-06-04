@@ -2,9 +2,12 @@
 import 'package:open_filex/open_filex.dart';
 import '../database/app_database.dart';
 import '../models/entry.dart';
+import 'entry_detail_page.dart';
 import 'entry_editor_page.dart';
 import 'tag_manager_page.dart';
+import 'project_manager_page.dart';
 import 'list_view_page.dart';
+import 'data_migration_page.dart';
 import '../services/export_service.dart';
 
 
@@ -133,9 +136,53 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.file_download_outlined),
-            tooltip: '导出 Excel',
-            onPressed: _exportToExcel,
+            icon: const Icon(Icons.folder_outlined),
+            tooltip: '项目管理',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProjectManagerPage()),
+              );
+            },
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: '更多',
+            onSelected: (value) async {
+              switch (value) {
+                case 'export_excel':
+                  await _exportToExcel();
+                  break;
+                case 'data_migration':
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DataMigrationPage()),
+                  );
+                  _loadEntries();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'export_excel',
+                child: ListTile(
+                  leading: Icon(Icons.file_download_outlined),
+                  title: Text('导出 Excel'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'data_migration',
+                child: ListTile(
+                  leading: Icon(Icons.sync_alt),
+                  title: Text('数据迁移'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -191,11 +238,11 @@ class _HomePageState extends State<HomePage> {
                         dateLabel: _formatDateKey(dateKey),
                         entries: dayEntries,
                         formatTime: _formatTime,
-                        onEdit: (entry) async {
+                        onTap: (entry) async {
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => EntryEditorPage(entry: entry),
+                              builder: (_) => EntryDetailPage(entry: entry),
                             ),
                           );
                           _loadEntries();
@@ -227,14 +274,14 @@ class _DayGroup extends StatefulWidget {
   final String dateLabel;
   final List<Entry> entries;
   final String Function(DateTime) formatTime;
-  final Function(Entry) onEdit;
+  final Function(Entry) onTap;
   final Function(Entry) onDelete;
 
   const _DayGroup({
     required this.dateLabel,
     required this.entries,
     required this.formatTime,
-    required this.onEdit,
+    required this.onTap,
     required this.onDelete,
   });
 
@@ -297,7 +344,7 @@ class _DayGroupState extends State<_DayGroup> {
             ...widget.entries.map((entry) => _EntryCard(
                   entry: entry,
                   formatTime: widget.formatTime,
-                  onEdit: () => widget.onEdit(entry),
+                  onTap: () => widget.onTap(entry),
                   onDelete: () => widget.onDelete(entry),
                 )),
         ],
@@ -309,13 +356,13 @@ class _DayGroupState extends State<_DayGroup> {
 class _EntryCard extends StatelessWidget {
   final Entry entry;
   final String Function(DateTime) formatTime;
-  final VoidCallback onEdit;
+  final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _EntryCard({
     required this.entry,
     required this.formatTime,
-    required this.onEdit,
+    required this.onTap,
     required this.onDelete,
   });
 
@@ -339,19 +386,50 @@ class _EntryCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: InkWell(
-              onTap: onEdit,
+              onTap: onTap,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 内容截断（最多2行）
                     Text(
                       entry.content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 15, height: 1.4),
                     ),
-                    if (entry.tags.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                    const SizedBox(height: 4),
+                    // 项目名
+                    if (entry.projectName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.folder_outlined, size: 11,
+                                  color: theme.colorScheme.onPrimaryContainer),
+                              const SizedBox(width: 3),
+                              Text(
+                                entry.projectName!,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    // 标签
+                    if (entry.tags.isNotEmpty)
                       Wrap(
                         spacing: 4,
                         runSpacing: 2,
@@ -360,7 +438,7 @@ class _EntryCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: theme.colorScheme.secondaryContainer,
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               tag.name,
@@ -372,7 +450,6 @@ class _EntryCard extends StatelessWidget {
                           );
                         }).toList(),
                       ),
-                    ],
                   ],
                 ),
               ),
