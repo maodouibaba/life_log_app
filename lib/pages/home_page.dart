@@ -19,6 +19,7 @@ class _HomePageState extends State<HomePage> {
   final AppDatabase _db = AppDatabase();
   List<Entry> _entries = [];
   bool _loading = true;
+  String? _loadError;
 
   @override
   void initState() {
@@ -27,7 +28,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadEntries() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       final entries = await _db.getAllEntries().timeout(
         const Duration(seconds: 10),
@@ -47,6 +51,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _entries = [];
         _loading = false;
+        _loadError = '数据库读取错误：$e';
       });
     }
   }
@@ -137,20 +142,45 @@ class _HomePageState extends State<HomePage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _entries.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.edit_note, size: 80, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text('还没有记录', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                      SizedBox(height: 8),
-                      Text('点击右下角 + 开始记录', style: TextStyle(color: Colors.grey)),
-                    ],
+          : _loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                        const SizedBox(height: 16),
+                        const Text('读取数据失败', style: TextStyle(fontSize: 18)),
+                        const SizedBox(height: 8),
+                        Text(
+                          _loadError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.tonal(
+                          onPressed: _loadEntries,
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ),
                   ),
                 )
-              : RefreshIndicator(
+              : _entries.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.edit_note, size: 80, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text('还没有记录', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                          SizedBox(height: 8),
+                          Text('点击右下角 + 开始记录', style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
                   onRefresh: _loadEntries,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(12),
