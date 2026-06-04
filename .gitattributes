@@ -1,0 +1,4 @@
+# Force LF line endings for Xcode project files (macOS requirement)
+ios/Runner.xcodeproj/project.pbxproj text eol=lf
+ios/Runner.xcodeproj/*.pbxproj text eol=lf
+*.pbxproj text eol=lf
