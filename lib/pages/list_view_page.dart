@@ -2,6 +2,7 @@
 import '../database/app_database.dart';
 import '../models/entry.dart';
 import '../models/tag.dart';
+import 'entry_editor_page.dart';
 
 /// 列表视图页面
 /// 支持按日期范围、标签筛选
@@ -242,6 +243,15 @@ class _ListViewPageState extends State<ListViewPage> {
                               ],
                             ),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => EntryEditorPage(entry: entry),
+                                ),
+                              );
+                              _loadData();
+                            },
                           );
                         },
                       ),

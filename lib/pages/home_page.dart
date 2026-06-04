@@ -191,6 +191,15 @@ class _HomePageState extends State<HomePage> {
                         dateLabel: _formatDateKey(dateKey),
                         entries: dayEntries,
                         formatTime: _formatTime,
+                        onEdit: (entry) async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EntryEditorPage(entry: entry),
+                            ),
+                          );
+                          _loadEntries();
+                        },
                         onDelete: (entry) async {
                           await _db.deleteEntry(entry.id!);
                           _loadEntries();
@@ -218,12 +227,14 @@ class _DayGroup extends StatefulWidget {
   final String dateLabel;
   final List<Entry> entries;
   final String Function(DateTime) formatTime;
+  final Function(Entry) onEdit;
   final Function(Entry) onDelete;
 
   const _DayGroup({
     required this.dateLabel,
     required this.entries,
     required this.formatTime,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -286,6 +297,7 @@ class _DayGroupState extends State<_DayGroup> {
             ...widget.entries.map((entry) => _EntryCard(
                   entry: entry,
                   formatTime: widget.formatTime,
+                  onEdit: () => widget.onEdit(entry),
                   onDelete: () => widget.onDelete(entry),
                 )),
         ],
@@ -297,11 +309,13 @@ class _DayGroupState extends State<_DayGroup> {
 class _EntryCard extends StatelessWidget {
   final Entry entry;
   final String Function(DateTime) formatTime;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _EntryCard({
     required this.entry,
     required this.formatTime,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -324,37 +338,44 @@ class _EntryCard extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.content,
-                  style: const TextStyle(fontSize: 15, height: 1.4),
+            child: InkWell(
+              onTap: onEdit,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.content,
+                      style: const TextStyle(fontSize: 15, height: 1.4),
+                    ),
+                    if (entry.tags.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        children: entry.tags.map((tag) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              tag.name,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ],
                 ),
-                if (entry.tags.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 2,
-                    children: entry.tags.map((tag) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          tag.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.onSecondaryContainer,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
           IconButton(

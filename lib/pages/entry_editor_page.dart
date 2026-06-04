@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/tag.dart';
+import '../models/entry.dart';
 import '../database/app_database.dart';
 
 /// 新增/编辑记录页面
 class EntryEditorPage extends StatefulWidget {
-  const EntryEditorPage({super.key});
+  final Entry? entry; // null = 新建, 非 null = 编辑
+
+  const EntryEditorPage({super.key, this.entry});
 
   @override
   State<EntryEditorPage> createState() => _EntryEditorPageState();
@@ -13,6 +16,8 @@ class EntryEditorPage extends StatefulWidget {
 class _EntryEditorPageState extends State<EntryEditorPage> {
   final AppDatabase _db = AppDatabase();
   final _contentController = TextEditingController();
+
+  bool get _isEditMode => widget.entry != null;
 
   // 已选标签 ID（含隐式选中的祖先标签）
   final Set<int> _selectedTagIds = {};
@@ -31,6 +36,11 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   void initState() {
     super.initState();
     _loadTags();
+    // 编辑模式：预填内容和标签
+    if (_isEditMode) {
+      _contentController.text = widget.entry!.content;
+      _selectedTagIds.addAll(widget.entry!.tags.map((t) => t.id!).toSet());
+    }
   }
 
   Future<void> _loadTags() async {
@@ -144,7 +154,15 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     setState(() => _saving = true);
 
     try {
-      await _db.createEntry(content, tagIds: _selectedTagIds.toList());
+      if (_isEditMode) {
+        await _db.updateEntryWithTags(
+          widget.entry!.id!,
+          content,
+          tagIds: _selectedTagIds.toList(),
+        );
+      } else {
+        await _db.createEntry(content, tagIds: _selectedTagIds.toList());
+      }
       if (mounted) {
         Navigator.pop(context, true);
       }
@@ -175,7 +193,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('新记录'),
+        title: Text(_isEditMode ? '编辑记录' : '新记录'),
         actions: [
           _saving
               ? const SizedBox(

@@ -255,6 +255,31 @@ class AppDatabase {
     );
   }
 
+  /// 更新记录内容及标签（先删旧关联，再插新关联）
+  Future<void> updateEntryWithTags(int entryId, String content, {List<int>? tagIds}) async {
+    final db = await database;
+
+    // 更新内容
+    await db.update(
+      'entries',
+      {'content': content, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [entryId],
+    );
+
+    // 删除旧标签关联
+    await db.delete('entry_tags', where: 'entry_id = ?', whereArgs: [entryId]);
+
+    // 插入新标签关联
+    if (tagIds != null && tagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final tagId in tagIds) {
+        batch.insert('entry_tags', EntryTag(entryId: entryId, tagId: tagId).toMap());
+      }
+      await batch.commit(noResult: true);
+    }
+  }
+
   // ==================== 导出 ====================
 
   /// 获取所有记录及标签（用于导出）
