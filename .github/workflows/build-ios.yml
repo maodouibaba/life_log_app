@@ -23,8 +23,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS (debug mode, for sideloading)
-        run: flutter build ios --debug --no-codesign
+      - name: Build iOS (profile mode, for sideloading)
+        run: flutter build ios --profile --no-codesign
 
       - name: Create .ipa
         run: |
