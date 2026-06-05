@@ -669,10 +669,12 @@ class _ListViewPageState extends State<ListViewPage> {
             ),
           ),
 
-          // 筛选栏
+          // 筛选栏（可横向滚动，防止溢出）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
               children: [
                 _FilterChip(
                   icon: Icons.date_range,
@@ -711,6 +713,7 @@ class _ListViewPageState extends State<ListViewPage> {
               ],
             ),
           ),
+        ),
 
           // 当前活跃筛选条件（多标签展示）
           if (_hasFilter)
