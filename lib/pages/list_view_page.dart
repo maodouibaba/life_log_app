@@ -960,9 +960,7 @@ class _MultiTagFilterDialogState extends State<_MultiTagFilterDialog> {
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
         TextButton(
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
           child: const Text('确定'),
         ),
       ],
@@ -1096,9 +1094,7 @@ class _MultiAttributeTagFilterDialogState
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
         TextButton(
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
           child: const Text('确定'),
         ),
       ],
@@ -1174,9 +1170,7 @@ class _MultiProjectFilterDialogState
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
         TextButton(
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
           child: const Text('确定'),
         ),
       ],
@@ -1275,9 +1269,7 @@ class _MultiTagPickerDialogState extends State<_MultiTagPickerDialog> {
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
         TextButton(
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => Navigator.pop(context, _selectedIds.toList()),
+          onPressed: () => Navigator.pop(context, _selectedIds.toList()),
           child: const Text('确定'),
         ),
       ],
