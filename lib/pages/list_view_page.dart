@@ -103,6 +103,34 @@ class _ListViewPageState extends State<ListViewPage> {
 
   // ==================== 筛选条件 ====================
 
+  Future<void> _pickDate() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('选择单日'),
+              onTap: () => Navigator.pop(ctx, 'day'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.date_range),
+              title: const Text('选择时段'),
+              onTap: () => Navigator.pop(ctx, 'range'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'day') {
+      await _pickSingleDay();
+    } else if (choice == 'range') {
+      await _pickDateRange();
+    }
+  }
+
   Future<void> _pickDateRange() async {
     final range = await showDateRangePicker(
       context: context,
@@ -612,8 +640,7 @@ class _ListViewPageState extends State<ListViewPage> {
                   icon: Icons.date_range,
                   label: '日期',
                   active: _startDate != null,
-                  onTap: _selectMode ? null : _pickSingleDay,
-                  onLongPress: _selectMode ? null : _pickDateRange,
+                  onTap: _selectMode ? null : _pickDate,
                 ),
                 const SizedBox(width: 4),
                 _FilterChip(
@@ -884,31 +911,26 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
 
   const _FilterChip({
     required this.icon,
     required this.label,
     required this.active,
     required this.onTap,
-    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPress: onLongPress,
-      child: ActionChip(
-        avatar: Icon(icon, size: 18),
-        label: Text(label, style: const TextStyle(fontSize: 11)),
-        onPressed: onTap,
-        color: active
-            ? WidgetStateProperty.all(
-                Theme.of(context).colorScheme.primaryContainer)
-            : null,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
+    return ActionChip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      onPressed: onTap,
+      color: active
+          ? WidgetStateProperty.all(
+              Theme.of(context).colorScheme.primaryContainer)
+          : null,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }
@@ -1004,10 +1026,10 @@ class _MultiTagFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
@@ -1069,10 +1091,10 @@ class _MultiAttributeTagFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
@@ -1134,10 +1156,10 @@ class _MultiProjectFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
@@ -1234,10 +1256,10 @@ class _MultiTagPickerDialogState extends State<_MultiTagPickerDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
             child: const Text('取消')),
         TextButton(
-          onPressed: () => Navigator.pop(context, _selectedIds.toList()),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(_selectedIds.toList()),
           child: const Text('确定'),
         ),
       ],
