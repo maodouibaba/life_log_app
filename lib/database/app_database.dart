@@ -928,6 +928,41 @@ class AppDatabase {
     }
   }
 
+  /// 批量替换选中记录的属性标签
+  Future<void> batchReplaceAttributeTags(
+      List<int> entryIds, List<int> newAttributeTagIds) async {
+    if (entryIds.isEmpty) return;
+    final db = await database;
+    final placeholders = entryIds.map((_) => '?').join(',');
+
+    await db.delete('entry_attribute_tags',
+        where: 'entry_id IN ($placeholders)', whereArgs: entryIds);
+
+    if (newAttributeTagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final entryId in entryIds) {
+        for (final atId in newAttributeTagIds) {
+          batch.insert('entry_attribute_tags',
+              EntryAttributeTag(entryId: entryId, attributeTagId: atId).toMap());
+        }
+      }
+      await batch.commit(noResult: true);
+    }
+  }
+
+  /// 批量设置选中记录的项目
+  Future<void> batchSetProjects(
+      List<int> entryIds, int? projectId) async {
+    if (entryIds.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final entryId in entryIds) {
+      batch.update('entries', {'project_id': projectId},
+          where: 'id = ?', whereArgs: [entryId]);
+    }
+    await batch.commit(noResult: true);
+  }
+
   // ==================== 导入 / 导出 ====================
 
   /// 导出为 JSON（指定空间或全部）

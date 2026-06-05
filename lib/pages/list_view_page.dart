@@ -427,6 +427,86 @@ class _ListViewPageState extends State<ListViewPage> {
     }
   }
 
+  Future<void> _batchReplaceAttributeTags() async {
+    if (_selectedIds.isEmpty) return;
+    _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
+    if (!mounted) return;
+
+    final selectedIds = await showDialog<Set<int>>(
+      context: context,
+      builder: (ctx) => _MultiAttributeTagFilterDialog(
+        tags: _allAttributeTags,
+        initialSelectedIds: const <int>{},
+      ),
+    );
+    if (selectedIds == null || !mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量替换属性标签'),
+        content: Text(
+            '将 ${_selectedIds.length} 条记录的属性标签替换为所选标签吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.batchReplaceAttributeTags(
+          _selectedIds.toList(), selectedIds.toList());
+      if (!mounted) return;
+      _selectedIds.clear();
+      _loadData();
+    }
+  }
+
+  Future<void> _batchSetProject() async {
+    if (_selectedIds.isEmpty) return;
+    _allProjects = await _db.getAllProjects(spaceId: _spaceId);
+    if (!mounted) return;
+
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => _BatchProjectPickerDialog(
+        projects: _allProjects,
+      ),
+    );
+    // result == -1 means "不选项目", result == null means cancelled
+    if (result == null || !mounted) return;
+    final projectId = result == -1 ? null : result;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量设置项目'),
+        content: Text(
+            '将 ${_selectedIds.length} 条记录的项目设置为所选项目吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.batchSetProjects(_selectedIds.toList(), projectId);
+      if (!mounted) return;
+      _selectedIds.clear();
+      _loadData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -457,6 +537,18 @@ class _ListViewPageState extends State<ListViewPage> {
                   color: theme.colorScheme.primary),
               tooltip: '替换树状标签',
               onPressed: _batchReplaceTags,
+            ),
+            IconButton(
+              icon: Icon(Icons.turned_in_not,
+                  color: theme.colorScheme.primary),
+              tooltip: '替换属性标签',
+              onPressed: _batchReplaceAttributeTags,
+            ),
+            IconButton(
+              icon: Icon(Icons.folder_outlined,
+                  color: theme.colorScheme.primary),
+              tooltip: '批量设置项目',
+              onPressed: _batchSetProject,
             ),
             IconButton(
               icon: Icon(Icons.delete_outline,
@@ -1092,6 +1184,63 @@ class _MultiProjectFilterDialogState
   }
 }
 
+/// 批量设置项目弹窗（单选 + 不选项目选项）
+class _BatchProjectPickerDialog extends StatefulWidget {
+  final List<Project> projects;
+
+  const _BatchProjectPickerDialog({required this.projects});
+
+  @override
+  State<_BatchProjectPickerDialog> createState() =>
+      _BatchProjectPickerDialogState();
+}
+
+class _BatchProjectPickerDialogState
+    extends State<_BatchProjectPickerDialog> {
+  int? _selectedId;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('选择项目'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            RadioListTile<int>(
+              title: const Text('（不选项目）'),
+              value: -1,
+              groupValue: _selectedId,
+              onChanged: (v) => setState(() => _selectedId = v),
+              dense: true,
+            ),
+            ...widget.projects.map((p) => RadioListTile<int>(
+                  title: Text(p.name),
+                  value: p.id!,
+                  groupValue: _selectedId,
+                  onChanged: (v) => setState(() => _selectedId = v),
+                  dense: true,
+                )),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消')),
+        TextButton(
+          onPressed: _selectedId != null
+              ? () => Navigator.pop(context, _selectedId)
+              : null,
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 多选树状标签弹窗（用于批量替换）
 class _MultiTagPickerDialog extends StatefulWidget {
   final List<Tag> allTags;
   const _MultiTagPickerDialog({required this.allTags});
