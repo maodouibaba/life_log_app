@@ -669,9 +669,9 @@ class _ListViewPageState extends State<ListViewPage> {
             ),
           ),
 
-          // 筛选栏（可横向滚动，防止溢出）
+          // 筛选按钮行（可横向滚动，防止溢出）
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.only(left: 12, right: 12, top: 4),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -703,17 +703,23 @@ class _ListViewPageState extends State<ListViewPage> {
                   active: _filterProjectIds.isNotEmpty,
                   onTap: _selectMode ? null : _pickProject,
                 ),
-                const Spacer(),
-                // 分组方式切换 — 突出显示
-                _GroupByButton(
-                  currentGroupBy: _groupBy,
-                  onSelected: (v) => setState(() => _groupBy = v),
-                  count: _entries.length,
-                ),
               ],
             ),
           ),
         ),
+
+          // 分组方式行
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
+            child: Row(
+              children: [
+                _GroupByButton(
+                  currentGroupBy: _groupBy,
+                  onSelected: (v) => setState(() => _groupBy = v),
+                ),
+              ],
+            ),
+          ),
 
           // 当前活跃筛选条件（多标签展示）
           if (_hasFilter)
@@ -783,12 +789,10 @@ class _ListViewPageState extends State<ListViewPage> {
 class _GroupByButton extends StatelessWidget {
   final String currentGroupBy;
   final ValueChanged<String> onSelected;
-  final int count;
 
   const _GroupByButton({
     required this.currentGroupBy,
     required this.onSelected,
-    required this.count,
   });
 
   String get _label {
@@ -846,14 +850,6 @@ class _GroupByButton extends StatelessWidget {
             _buildItem(value: 'none', label: '不分组', icon: Icons.clear_all),
           ],
         ),
-        const SizedBox(width: 4),
-        Text(
-          '$count',
-          style: TextStyle(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontSize: 13,
-          ),
-        ),
       ],
     );
   }
@@ -880,7 +876,7 @@ class _GroupByButton extends StatelessWidget {
           ),
           if (currentGroupBy == value) ...[
             const Spacer(),
-            Icon(Icons.check, size: 16, color: Colors.green),
+            const Icon(Icons.check, size: 16, color: Colors.green),
           ],
         ],
       ),

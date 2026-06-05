@@ -12,8 +12,32 @@ import '../database/app_database.dart';
 class EntryEditorPage extends StatefulWidget {
   final Entry? entry; // null = 新建, 非 null = 编辑
   final int spaceId;
+  final bool useSheetMode; // true = 弹出窗口形式, false = 全页形式
 
-  const EntryEditorPage({super.key, this.entry, required this.spaceId});
+  const EntryEditorPage({
+    super.key,
+    this.entry,
+    required this.spaceId,
+    this.useSheetMode = false,
+  });
+
+  /// 以弹出窗口形式（底部弹窗）打开新建/编辑记录页面
+  static Future<bool?> showAsSheet(BuildContext context,
+      {Entry? entry, required int spaceId}) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => EntryEditorPage(
+        entry: entry,
+        spaceId: spaceId,
+        useSheetMode: true,
+      ),
+    );
+  }
 
   @override
   State<EntryEditorPage> createState() => _EntryEditorPageState();
@@ -247,8 +271,13 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final path = _selectedTagPath;
+    if (widget.useSheetMode) {
+      return _buildSheet(theme);
+    }
+    return _buildPage(theme);
+  }
 
+  Widget _buildPage(ThemeData theme) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditMode ? '编辑记录' : '新记录'),
@@ -267,215 +296,286 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
+        children: _buildFormSections(theme),
+      ),
+    );
+  }
+
+  Widget _buildSheet(ThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // ---- 事项简介 ----
-          TextField(
-            controller: _titleController,
-            autofocus: !_isEditMode,
-            maxLines: 1,
-            decoration: InputDecoration(
-              hintText: '事项简介（如：今天的工作总结）',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor:
-                  theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-
-          const SizedBox(height: 12),
-
-          // ---- 详细情况 ----
-          TextField(
-            controller: _contentController,
-            maxLines: 6,
-            minLines: 3,
-            decoration: InputDecoration(
-              hintText: '详细情况...',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor:
-                  theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          const Divider(),
-          const SizedBox(height: 12),
-
-          // ---- 树状标签选择 ----
-          _SectionHeader(
-            icon: Icons.label_outline,
-            label: '树状标签',
-            onAdd: _openTreeTagPicker,
-          ),
-          const SizedBox(height: 4),
-          InkWell(
-            onTap: _openTreeTagPicker,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant,
+          // 拖拽指示条
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant
+                      .withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              child: path.isEmpty
-                  ? Text('点击选择树状标签',
-                      style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 14))
-                  : Row(
-                      children: [
-                        Icon(Icons.label,
-                            size: 16, color: theme.colorScheme.primary),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            path.map((t) => t.name).join(' > '),
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: theme.colorScheme.primary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (_selectedLeafTagId != null)
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _selectedLeafTagId = null),
-                            child: Icon(Icons.close,
-                                size: 16,
-                                color: theme.colorScheme.onSurfaceVariant),
-                          ),
-                      ],
-                    ),
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          // ---- 属性标签选择 ----
-          _SectionHeader(
-            icon: Icons.turned_in_not_outlined,
-            label: '属性标签',
-            onAdd: _openAttributeTagPicker,
-          ),
-          const SizedBox(height: 4),
-          InkWell(
-            onTap: _openAttributeTagPicker,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant,
+          // 标题栏
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
                 ),
-              ),
-              child: _selectedAttributeTagIds.isEmpty
-                  ? Text('点击选择属性标签',
-                      style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 14))
-                  : Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: _selectedAttributeTagIds.map((id) {
-                        final at = _allAttributeTags
-                            .firstWhere((t) => t.id == id,
-                                orElse: () => AttributeTag(
-                                    name: '?', spaceId: _spaceId));
-                        return Chip(
-                          label: Text(at.name, style: const TextStyle(fontSize: 12)),
-                          deleteIcon: const Icon(Icons.close, size: 14),
-                          onDeleted: () {
-                            setState(() => _selectedAttributeTagIds.remove(id));
-                          },
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                        );
-                      }).toList(),
-                    ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // ---- 项目选择 ----
-          _SectionHeader(
-            icon: Icons.folder_outlined,
-            label: '项目',
-            onAdd: _openProjectPicker,
-          ),
-          const SizedBox(height: 4),
-          InkWell(
-            onTap: _openProjectPicker,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant,
+                Text(
+                  _isEditMode ? '编辑记录' : '新记录',
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w600),
                 ),
-              ),
-              child: _selectedProjectId == null
-                  ? Text('点击选择项目',
-                      style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 14))
-                  : Row(
-                      children: [
-                        Icon(Icons.folder,
-                            size: 16, color: theme.colorScheme.primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          _selectedProjectName ?? '项目$_selectedProjectId',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () => setState(() {
-                            _selectedProjectId = null;
-                            _selectedProjectName = null;
-                          }),
-                          child: Icon(Icons.close,
-                              size: 16,
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
+                const Spacer(),
+                _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2))
+                    : TextButton(
+                        onPressed: _save,
+                        child: const Text('保存')),
+              ],
             ),
           ),
-
-          const SizedBox(height: 40),
+          const Divider(height: 1),
+          // 表单内容
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: _buildFormSections(theme),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// 共享表单字段（页面模式与弹出窗口模式共用）
+  List<Widget> _buildFormSections(ThemeData theme) {
+    final path = _selectedTagPath;
+    return [
+      // ---- 事项简介 ----
+      TextField(
+        controller: _titleController,
+        autofocus: !_isEditMode,
+        maxLines: 1,
+        decoration: InputDecoration(
+          hintText: '事项简介（如：今天的工作总结）',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          filled: true,
+          fillColor:
+              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 14),
+        ),
+        textInputAction: TextInputAction.next,
+      ),
+
+      const SizedBox(height: 12),
+
+      // ---- 详细情况 ----
+      TextField(
+        controller: _contentController,
+        maxLines: 6,
+        minLines: 3,
+        decoration: InputDecoration(
+          hintText: '详细情况...',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          filled: true,
+          fillColor:
+              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        ),
+      ),
+
+      const SizedBox(height: 20),
+      const Divider(),
+      const SizedBox(height: 12),
+
+      // ---- 树状标签选择 ----
+      _SectionHeader(
+        icon: Icons.label_outline,
+        label: '树状标签',
+        onAdd: _openTreeTagPicker,
+      ),
+      const SizedBox(height: 4),
+      InkWell(
+        onTap: _openTreeTagPicker,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: path.isEmpty
+              ? Text('点击选择树状标签',
+                  style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 14))
+              : Row(
+                  children: [
+                    Icon(Icons.label,
+                        size: 16, color: theme.colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        path.map((t) => t.name).join(' > '),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.primary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_selectedLeafTagId != null)
+                      GestureDetector(
+                        onTap: () =>
+                            setState(() => _selectedLeafTagId = null),
+                        child: Icon(Icons.close,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                  ],
+                ),
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // ---- 属性标签选择 ----
+      _SectionHeader(
+        icon: Icons.turned_in_not_outlined,
+        label: '属性标签',
+        onAdd: _openAttributeTagPicker,
+      ),
+      const SizedBox(height: 4),
+      InkWell(
+        onTap: _openAttributeTagPicker,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: _selectedAttributeTagIds.isEmpty
+              ? Text('点击选择属性标签',
+                  style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 14))
+              : Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: _selectedAttributeTagIds.map((id) {
+                    final at = _allAttributeTags
+                        .firstWhere((t) => t.id == id,
+                            orElse: () => AttributeTag(
+                                name: '?', spaceId: _spaceId));
+                    return Chip(
+                      label: Text(at.name, style: const TextStyle(fontSize: 12)),
+                      deleteIcon: const Icon(Icons.close, size: 14),
+                      onDeleted: () {
+                        setState(() => _selectedAttributeTagIds.remove(id));
+                      },
+                      materialTapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                    );
+                  }).toList(),
+                ),
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // ---- 项目选择 ----
+      _SectionHeader(
+        icon: Icons.folder_outlined,
+        label: '项目',
+        onAdd: _openProjectPicker,
+      ),
+      const SizedBox(height: 4),
+      InkWell(
+        onTap: _openProjectPicker,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: _selectedProjectId == null
+              ? Text('点击选择项目',
+                  style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 14))
+              : Row(
+                  children: [
+                    Icon(Icons.folder,
+                        size: 16, color: theme.colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      _selectedProjectName ?? '项目$_selectedProjectId',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedProjectId = null;
+                        _selectedProjectName = null;
+                      }),
+                      child: Icon(Icons.close,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+
+      const SizedBox(height: 40),
+    ];
   }
 
 
@@ -697,7 +797,7 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
                             ? Theme.of(context)
                                 .colorScheme
                                 .primaryContainer
-                                .withOpacity(0.35)
+                                .withValues(alpha: 0.35)
                             : null,
                     borderRadius: BorderRadius.circular(8),
                   ),

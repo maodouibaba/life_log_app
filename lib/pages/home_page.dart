@@ -342,12 +342,7 @@ class _HomePageState extends State<HomePage> {
                     ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => EntryEditorPage(spaceId: _spaceId),
-            ),
-          );
+          await EntryEditorPage.showAsSheet(context, spaceId: _spaceId);
           _loadEntries();
         },
         child: const Icon(Icons.add),
