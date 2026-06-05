@@ -914,7 +914,7 @@ class _FilterChip extends StatelessWidget {
 }
 
 /// 树状标签多选弹窗（用于筛选，有初始选中状态）
-class _MultiTagFilterDialog extends StatefulWidget {
+class _MultiTagFilterDialog extends StatelessWidget {
   final List<Tag> allTags;
   final Set<int> initialSelectedIds;
 
@@ -924,110 +924,100 @@ class _MultiTagFilterDialog extends StatefulWidget {
   });
 
   @override
-  State<_MultiTagFilterDialog> createState() => _MultiTagFilterDialogState();
-}
-
-class _MultiTagFilterDialogState extends State<_MultiTagFilterDialog> {
-  late final Set<int> _selectedIds;
-  final Set<int> _expandedIds = {};
-  List<Tag> get _rootTags =>
-      widget.allTags.where((t) => t.parentId == null).toList();
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedIds = Set.from(widget.initialSelectedIds);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('筛选树状标签（已选 ${_selectedIds.length}）'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: _rootTags.isEmpty
-            ? const Text('暂无标签')
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _rootTags.length,
-                itemBuilder: (context, index) {
-                  return _buildTagNode(_rootTags[index], 0);
+    final selectedIds = Set<int>.from(initialSelectedIds);
+    final expandedIds = <int>{};
+
+    List<Tag> rootTags() => allTags.where((t) => t.parentId == null).toList();
+
+    Widget buildTagNode(Tag tag, int level, void Function(VoidCallback) setState) {
+      final children = allTags.where((t) => t.parentId == tag.id).toList();
+      final hasChildren = children.isNotEmpty;
+      final isExpanded = expandedIds.contains(tag.id);
+      final isSelected = selectedIds.contains(tag.id);
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(left: level * 20.0),
+            child: ListTile(
+              dense: true,
+              leading: Checkbox(
+                value: isSelected,
+                onChanged: (_) {
+                  setState(() {
+                    if (isSelected) {
+                      selectedIds.remove(tag.id!);
+                    } else {
+                      selectedIds.add(tag.id!);
+                    }
+                  });
                 },
               ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
-          child: const Text('确定'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTagNode(Tag tag, int level) {
-    final children =
-        widget.allTags.where((t) => t.parentId == tag.id).toList();
-    final hasChildren = children.isNotEmpty;
-    final isExpanded = _expandedIds.contains(tag.id);
-    final isSelected = _selectedIds.contains(tag.id);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(left: level * 20.0),
-          child: ListTile(
-            dense: true,
-            leading: Checkbox(
-              value: isSelected,
-              onChanged: (_) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedIds.remove(tag.id!);
-                  } else {
-                    _selectedIds.add(tag.id!);
-                  }
-                });
-              },
+              title: Text(tag.name,
+                  style:
+                      TextStyle(fontWeight: isSelected ? FontWeight.w600 : null)),
+              onTap: hasChildren
+                  ? () => setState(() {
+                        if (isExpanded) {
+                          expandedIds.remove(tag.id!);
+                        } else {
+                          expandedIds.add(tag.id!);
+                        }
+                      })
+                  : () {
+                      setState(() {
+                        if (isSelected) {
+                          selectedIds.remove(tag.id!);
+                        } else {
+                          selectedIds.add(tag.id!);
+                        }
+                      });
+                    },
+              trailing: hasChildren
+                  ? Icon(isExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 16)
+                  : null,
             ),
-            title: Text(tag.name,
-                style:
-                    TextStyle(fontWeight: isSelected ? FontWeight.w600 : null)),
-            onTap: hasChildren
-                ? () => setState(() {
-                      if (isExpanded) {
-                        _expandedIds.remove(tag.id!);
-                      } else {
-                        _expandedIds.add(tag.id!);
-                      }
-                    })
-                : () {
-                    setState(() {
-                      if (isSelected) {
-                        _selectedIds.remove(tag.id!);
-                      } else {
-                        _selectedIds.add(tag.id!);
-                      }
-                    });
-                  },
-            trailing: hasChildren
-                ? Icon(isExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16)
-                : null,
           ),
+          if (isExpanded && hasChildren)
+            ...children.map((c) => buildTagNode(c, level + 1, setState)),
+        ],
+      );
+    }
+
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text('筛选树状标签（已选 ${selectedIds.length}）'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: rootTags().isEmpty
+              ? const Text('暂无标签')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: rootTags().length,
+                  itemBuilder: (context, index) {
+                    return buildTagNode(rootTags()[index], 0, setState);
+                  },
+                ),
         ),
-        if (isExpanded && hasChildren)
-          ...children.map((c) => _buildTagNode(c, level + 1)),
-      ],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 }
 
 /// 属性标签多选弹窗（用于筛选，有初始选中状态）
-class _MultiAttributeTagFilterDialog extends StatefulWidget {
+class _MultiAttributeTagFilterDialog extends StatelessWidget {
   final List<AttributeTag> tags;
   final Set<int> initialSelectedIds;
 
@@ -1037,73 +1027,62 @@ class _MultiAttributeTagFilterDialog extends StatefulWidget {
   });
 
   @override
-  State<_MultiAttributeTagFilterDialog> createState() =>
-      _MultiAttributeTagFilterDialogState();
-}
-
-class _MultiAttributeTagFilterDialogState
-    extends State<_MultiAttributeTagFilterDialog> {
-  late final Set<int> _selectedIds;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedIds = Set.from(widget.initialSelectedIds);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('筛选属性标签（已选 ${_selectedIds.length}）'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: widget.tags.isEmpty
-            ? const Text('暂无属性标签')
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: widget.tags.length,
-                itemBuilder: (context, index) {
-                  final t = widget.tags[index];
-                  final isSelected = _selectedIds.contains(t.id);
-                  return ListTile(
-                    leading: Checkbox(
-                      value: isSelected,
-                      onChanged: (_) => setState(() {
+    final selectedIds = Set<int>.from(initialSelectedIds);
+
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text('筛选属性标签（已选 ${selectedIds.length}）'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: tags.isEmpty
+              ? const Text('暂无属性标签')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: tags.length,
+                  itemBuilder: (context, index) {
+                    final t = tags[index];
+                    final isSelected = selectedIds.contains(t.id);
+                    return ListTile(
+                      leading: Checkbox(
+                        value: isSelected,
+                        onChanged: (_) => setState(() {
+                          if (isSelected) {
+                            selectedIds.remove(t.id!);
+                          } else {
+                            selectedIds.add(t.id!);
+                          }
+                        }),
+                      ),
+                      title: Text(t.name),
+                      onTap: () => setState(() {
                         if (isSelected) {
-                          _selectedIds.remove(t.id!);
+                          selectedIds.remove(t.id!);
                         } else {
-                          _selectedIds.add(t.id!);
+                          selectedIds.add(t.id!);
                         }
                       }),
-                    ),
-                    title: Text(t.name),
-                    onTap: () => setState(() {
-                      if (isSelected) {
-                        _selectedIds.remove(t.id!);
-                      } else {
-                        _selectedIds.add(t.id!);
-                      }
-                    }),
-                    dense: true,
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
-          child: const Text('确定'),
+                      dense: true,
+                    );
+                  },
+                ),
         ),
-      ],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 }
 
 /// 项目多选弹窗（用于筛选，有初始选中状态）
-class _MultiProjectFilterDialog extends StatefulWidget {
+class _MultiProjectFilterDialog extends StatelessWidget {
   final List<Project> projects;
   final Set<int> initialSelectedIds;
 
@@ -1113,67 +1092,56 @@ class _MultiProjectFilterDialog extends StatefulWidget {
   });
 
   @override
-  State<_MultiProjectFilterDialog> createState() =>
-      _MultiProjectFilterDialogState();
-}
-
-class _MultiProjectFilterDialogState
-    extends State<_MultiProjectFilterDialog> {
-  late final Set<int> _selectedIds;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedIds = Set.from(widget.initialSelectedIds);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('筛选项目（已选 ${_selectedIds.length}）'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: widget.projects.isEmpty
-            ? const Text('暂无项目')
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: widget.projects.length,
-                itemBuilder: (context, index) {
-                  final p = widget.projects[index];
-                  final isSelected = _selectedIds.contains(p.id);
-                  return ListTile(
-                    leading: Checkbox(
-                      value: isSelected,
-                      onChanged: (_) => setState(() {
+    final selectedIds = Set<int>.from(initialSelectedIds);
+
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text('筛选项目（已选 ${selectedIds.length}）'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: projects.isEmpty
+              ? const Text('暂无项目')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: projects.length,
+                  itemBuilder: (context, index) {
+                    final p = projects[index];
+                    final isSelected = selectedIds.contains(p.id);
+                    return ListTile(
+                      leading: Checkbox(
+                        value: isSelected,
+                        onChanged: (_) => setState(() {
+                          if (isSelected) {
+                            selectedIds.remove(p.id!);
+                          } else {
+                            selectedIds.add(p.id!);
+                          }
+                        }),
+                      ),
+                      title: Text(p.name),
+                      onTap: () => setState(() {
                         if (isSelected) {
-                          _selectedIds.remove(p.id!);
+                          selectedIds.remove(p.id!);
                         } else {
-                          _selectedIds.add(p.id!);
+                          selectedIds.add(p.id!);
                         }
                       }),
-                    ),
-                    title: Text(p.name),
-                    onTap: () => setState(() {
-                      if (isSelected) {
-                        _selectedIds.remove(p.id!);
-                      } else {
-                        _selectedIds.add(p.id!);
-                      }
-                    }),
-                    dense: true,
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, Set.from(_selectedIds)),
-          child: const Text('确定'),
+                      dense: true,
+                    );
+                  },
+                ),
         ),
-      ],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, Set.from(selectedIds)),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 }
