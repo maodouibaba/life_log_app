@@ -170,11 +170,21 @@ class _ListViewPageState extends State<ListViewPage> {
   }
 
   Future<void> _pickTag() async {
+    // 捕获已知有效的 NavigatorState，绕过弹窗内 context 无法 pop 的问题
+    final nav = Navigator.of(context);
     final result = await showDialog<Set<int>>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => _MultiTagFilterDialog(
         allTags: _allTags,
         initialSelectedIds: _filterTagIds,
+        onClose: (selected) {
+          if (selected != null) {
+            nav.pop<Set<int>>(selected);
+          } else {
+            nav.pop();
+          }
+        },
       ),
     );
 
@@ -189,11 +199,21 @@ class _ListViewPageState extends State<ListViewPage> {
   Future<void> _pickAttributeTag() async {
     _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
     if (!mounted) return;
+
+    final nav = Navigator.of(context);
     final result = await showDialog<Set<int>>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => _MultiAttributeTagFilterDialog(
         tags: _allAttributeTags,
         initialSelectedIds: _filterAttributeTagIds,
+        onClose: (selected) {
+          if (selected != null) {
+            nav.pop<Set<int>>(selected);
+          } else {
+            nav.pop();
+          }
+        },
       ),
     );
 
@@ -209,11 +229,20 @@ class _ListViewPageState extends State<ListViewPage> {
     _allProjects = await _db.getAllProjects(spaceId: _spaceId);
     if (!mounted) return;
 
+    final nav = Navigator.of(context);
     final result = await showDialog<Set<int>>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => _MultiProjectFilterDialog(
         projects: _allProjects,
         initialSelectedIds: _filterProjectIds,
+        onClose: (selected) {
+          if (selected != null) {
+            nav.pop<Set<int>>(selected);
+          } else {
+            nav.pop();
+          }
+        },
       ),
     );
 
@@ -460,11 +489,20 @@ class _ListViewPageState extends State<ListViewPage> {
     _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
     if (!mounted) return;
 
+    final nav = Navigator.of(context);
     final selectedIds = await showDialog<Set<int>>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => _MultiAttributeTagFilterDialog(
         tags: _allAttributeTags,
         initialSelectedIds: const <int>{},
+        onClose: (selected) {
+          if (selected != null) {
+            nav.pop<Set<int>>(selected);
+          } else {
+            nav.pop();
+          }
+        },
       ),
     );
     if (selectedIds == null || !mounted) return;
@@ -623,7 +661,7 @@ class _ListViewPageState extends State<ListViewPage> {
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 filled: true,
                 fillColor: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.3),
+                    .withValues(alpha: 0.3),
                 isDense: true,
               ),
               onSubmitted: _doSearch,
@@ -939,10 +977,12 @@ class _FilterChip extends StatelessWidget {
 class _MultiTagFilterDialog extends StatelessWidget {
   final List<Tag> allTags;
   final Set<int> initialSelectedIds;
+  final void Function(Set<int>?) onClose;
 
   const _MultiTagFilterDialog({
     required this.allTags,
     required this.initialSelectedIds,
+    required this.onClose,
   });
 
   @override
@@ -1026,10 +1066,10 @@ class _MultiTagFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-              child: const Text('取消')),
+            onPressed: () => onClose(null),
+            child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
+            onPressed: () => onClose(Set<int>.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
@@ -1042,10 +1082,12 @@ class _MultiTagFilterDialog extends StatelessWidget {
 class _MultiAttributeTagFilterDialog extends StatelessWidget {
   final List<AttributeTag> tags;
   final Set<int> initialSelectedIds;
+  final void Function(Set<int>?) onClose;
 
   const _MultiAttributeTagFilterDialog({
     required this.tags,
     required this.initialSelectedIds,
+    required this.onClose,
   });
 
   @override
@@ -1091,10 +1133,10 @@ class _MultiAttributeTagFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-              child: const Text('取消')),
+            onPressed: () => onClose(null),
+            child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
+            onPressed: () => onClose(Set<int>.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
@@ -1107,10 +1149,12 @@ class _MultiAttributeTagFilterDialog extends StatelessWidget {
 class _MultiProjectFilterDialog extends StatelessWidget {
   final List<Project> projects;
   final Set<int> initialSelectedIds;
+  final void Function(Set<int>?) onClose;
 
   const _MultiProjectFilterDialog({
     required this.projects,
     required this.initialSelectedIds,
+    required this.onClose,
   });
 
   @override
@@ -1156,10 +1200,10 @@ class _MultiProjectFilterDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-              child: const Text('取消')),
+            onPressed: () => onClose(null),
+            child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.of(context, rootNavigator: true).pop(Set.from(selectedIds)),
+            onPressed: () => onClose(Set<int>.from(selectedIds)),
             child: const Text('确定'),
           ),
         ],
