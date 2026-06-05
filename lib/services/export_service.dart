@@ -30,6 +30,8 @@ class ExportService {
     for (int i = 1; i <= maxDepth; i++) {
       header.add('层级$i');
     }
+    header.add('项目');
+    header.add('属性标签');
     sheet.appendRow(header);
 
     // 数据行：一个标签一行
@@ -37,24 +39,28 @@ class ExportService {
       final tags = row['tags'] as List<String>;
       final dateTimeStr = _formatDateTime(row['created_at'] as DateTime);
       final content = row['content'] as String;
+      final project = row['project'] as String? ?? '';
+      final attributeTags = (row['attribute_tags'] as List<dynamic>?)?.cast<String>() ?? [];
 
       if (tags.isEmpty) {
-        // 没有标签的记录也输出一行
         sheet.appendRow([
           dateTimeStr,
           content,
           ...List.filled(maxDepth, ''),
+          project,
+          attributeTags.join('、'),
         ]);
       } else {
         for (final tagPath in tags) {
           final parts = tagPath.split(' > ');
-          // 补齐空位，使每行长度一致
           final padded = List<String>.from(parts)
             ..addAll(List.filled(maxDepth - parts.length, ''));
           sheet.appendRow([
             dateTimeStr,
             content,
             ...padded,
+            project,
+            attributeTags.join('、'),
           ]);
         }
       }

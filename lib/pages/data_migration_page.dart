@@ -56,8 +56,20 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     } catch (e) {
       setState(() => _exporting = false);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('导出失败'),
+          content: SingleChildScrollView(
+            child: SelectableText('$e',
+                style: const TextStyle(fontSize: 13)),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('确定')),
+          ],
+        ),
       );
     }
   }

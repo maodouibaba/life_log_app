@@ -978,8 +978,14 @@ class AppDatabase {
     final whereClause = spaceId != null ? 'WHERE space_id = ?' : '';
     final whereArgs = spaceId != null ? [spaceId] : null;
 
-    final entryMaps = await db.query('entries',
-        where: whereClause, whereArgs: whereArgs, orderBy: 'id ASC');
+    List<Map<String, dynamic>> entryMaps;
+    try {
+      entryMaps = await db.query('entries',
+          where: whereClause, whereArgs: whereArgs, orderBy: 'id ASC');
+    } catch (e) {
+      debugPrint('导出失败：查询 entries 表出错 — $e');
+      rethrow;
+    }
     final entryIds = entryMaps.map((m) => m['id'] as int).toList();
 
     List<Map<String, dynamic>> entryTagMaps = [];
@@ -987,12 +993,42 @@ class AppDatabase {
 
     if (entryIds.isNotEmpty) {
       final ph = entryIds.map((_) => '?').join(',');
-      entryTagMaps = await db.rawQuery(
-          'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-          entryIds);
-      entryAttributeTagMaps = await db.rawQuery(
-          'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-          entryIds);
+      try {
+        entryTagMaps = await db.rawQuery(
+            'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+            entryIds);
+      } catch (e) {
+        debugPrint('导出失败：查询 entry_tags 表出错 — $e');
+        rethrow;
+      }
+      try {
+        entryAttributeTagMaps = await db.rawQuery(
+            'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+            entryIds);
+      } catch (e) {
+        debugPrint('导出失败：查询 entry_attribute_tags 表出错 — $e');
+        rethrow;
+      }
+    }
+
+    List<Map<String, dynamic>> attributeTagMaps;
+    try {
+      attributeTagMaps = spaceId != null
+          ? await db.query('attribute_tags', where: 'space_id = ?', whereArgs: [spaceId])
+          : await db.query('attribute_tags');
+    } catch (e) {
+      debugPrint('导出失败：查询 attribute_tags 表出错 — $e');
+      rethrow;
+    }
+
+    List<Map<String, dynamic>> attributeTagGroupMaps;
+    try {
+      attributeTagGroupMaps = spaceId != null
+          ? await db.query('attribute_tag_groups', where: 'space_id = ?', whereArgs: [spaceId])
+          : await db.query('attribute_tag_groups');
+    } catch (e) {
+      debugPrint('导出失败：查询 attribute_tag_groups 表出错 — $e');
+      rethrow;
     }
 
     final data = {
@@ -1004,13 +1040,9 @@ class AppDatabase {
       'projects': projects.map((p) => p.toMap()).toList(),
       'entries': entryMaps,
       'entry_tags': entryTagMaps,
-      'attribute_tags': spaceId != null
-          ? await db.query('attribute_tags', where: 'space_id = ?', whereArgs: [spaceId])
-          : await db.query('attribute_tags'),
+      'attribute_tags': attributeTagMaps,
       'entry_attribute_tags': entryAttributeTagMaps,
-      'attribute_tag_groups': spaceId != null
-          ? await db.query('attribute_tag_groups', where: 'space_id = ?', whereArgs: [spaceId])
-          : await db.query('attribute_tag_groups'),
+      'attribute_tag_groups': attributeTagGroupMaps,
       'project_groups': spaceId != null
           ? await db.query('project_groups', where: 'space_id = ?', whereArgs: [spaceId])
           : await db.query('project_groups'),
@@ -1113,6 +1145,7 @@ class AppDatabase {
         'updated_at': entry.updatedAt,
         'tags': tagPaths,
         'project': entry.projectName,
+        'attribute_tags': entry.attributeTags.map((at) => at.name).toList(),
       });
     }
 
