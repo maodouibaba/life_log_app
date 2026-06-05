@@ -9,8 +9,8 @@ class ExportService {
 
   /// 导出所有记录到 Excel 文件
   /// 返回导出文件的路径
-  Future<String> exportToExcel() async {
-    final data = await _db.getAllEntriesWithTagPaths();
+  Future<String> exportToExcel({int? spaceId}) async {
+    final data = await _db.getAllEntriesWithTagPaths(spaceId: spaceId);
 
     // 第一遍扫描：找出标签路径最大层级数
     int maxDepth = 0;

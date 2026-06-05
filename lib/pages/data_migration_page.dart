@@ -4,7 +4,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import '../database/app_database.dart';
 
-/// 数据导入导出页面（JSON 格式，用于完整数据迁移）
+/// 数据备份页面
+/// 导出全部数据为 JSON，支持分享和导入恢复
 class DataMigrationPage extends StatefulWidget {
   const DataMigrationPage({super.key});
 
@@ -32,7 +33,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('导出成功'),
+          title: const Text('备份成功'),
           content: Text('已保存到：$filePath'),
           actions: [
             TextButton(
@@ -62,13 +63,18 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('导入数据'),
-        content: const Text('导入将清空所有现有数据并替换为导入内容，此操作不可撤销。\n\n确定继续吗？'),
+        title: const Text('恢复备份'),
+        content: const Text(
+            '恢复备份将清空所有现有数据并替换为备份内容，此操作不可撤销。\n\n确定继续吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('确定导入', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            child: Text('确定恢复',
+                style:
+                    TextStyle(color: Theme.of(ctx).colorScheme.error)),
           ),
         ],
       ),
@@ -83,13 +89,13 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
       setState(() => _importing = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入成功：$filePath')),
+        SnackBar(content: Text('恢复成功：$filePath')),
       );
     } catch (e) {
       setState(() => _importing = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
+        SnackBar(content: Text('恢复失败：$e')),
       );
     }
   }
@@ -100,7 +106,8 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     return files
         .where((f) => f is File && f.path.endsWith('.json'))
         .toList()
-      ..sort((a, b) => -a.statSync().modified.compareTo(b.statSync().modified));
+      ..sort(
+          (a, b) => -a.statSync().modified.compareTo(b.statSync().modified));
   }
 
   @override
@@ -109,12 +116,12 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('数据迁移'),
+        title: const Text('数据备份'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // 导出
+          // 导出备份
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -123,22 +130,31 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.file_upload_outlined, color: theme.colorScheme.primary),
+                      Icon(Icons.file_upload_outlined,
+                          color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
-                      Text('导出数据', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                      const Text('导出备份',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w600)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text('将所有记录、标签、项目导出为 JSON 文件，用于备份或迁移。\n导出的文件会保存在 App 的文档目录中，可通过爱思助手或分享功能取出。'),
+                  const Text(
+                      '将所有记录、标签、项目等数据导出为 JSON 备份文件。\n'
+                      '导出的文件可分享到微信、AirDrop 等，也可通过爱思助手取出。'),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       onPressed: _exporting ? null : _export,
                       icon: _exporting
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.file_upload_outlined),
-                      label: Text(_exporting ? '导出中...' : '导出 JSON'),
+                      label: Text(_exporting ? '导出中...' : '导出备份'),
                     ),
                   ),
                 ],
@@ -148,7 +164,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
           const SizedBox(height: 20),
 
-          // 导入
+          // 导入恢复
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -157,20 +173,26 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.file_download_outlined, color: theme.colorScheme.error),
+                      Icon(Icons.file_download_outlined,
+                          color: theme.colorScheme.error),
                       const SizedBox(width: 8),
-                      Text('导入数据', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                      const Text('恢复备份',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w600)),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '将备份的 .json 文件放入 App 的文档目录（可通过爱思助手"文件共享"操作），'
-                    '然后在下方选择文件导入。导入后会替换全部现有数据。',
-                    style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
+                    '然后在下方选择要恢复的备份文件。恢复后会替换全部现有数据。',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 16),
                   if (_importing)
-                    const Center(child: Padding(
+                    const Center(
+                        child: Padding(
                       padding: EdgeInsets.all(20),
                       child: CircularProgressIndicator(),
                     ))
@@ -178,28 +200,35 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     FutureBuilder<List<FileSystemEntity>>(
                       future: _scanBackupFiles(),
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
                         }
                         final files = snapshot.data ?? [];
                         if (files.isEmpty) {
                           return Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                              color: theme.colorScheme.surfaceContainerHighest
+                                  .withOpacity(0.3),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Column(
                               children: [
-                                Icon(Icons.folder_open, size: 48, color: Colors.grey[400]),
+                                Icon(Icons.folder_open,
+                                    size: 48, color: Colors.grey[400]),
                                 const SizedBox(height: 8),
                                 const Text('没有找到备份文件',
-                                    style: TextStyle(color: Colors.grey)),
+                                    style:
+                                        TextStyle(color: Colors.grey)),
                                 const SizedBox(height: 4),
                                 Text(
                                   '请先将 .json 备份文件通过爱思助手放入 App 的文档目录',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[500]),
                                 ),
                               ],
                             ),
@@ -209,26 +238,38 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('找到 ${files.length} 个备份文件：',
-                                style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant)),
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant)),
                             const SizedBox(height: 8),
                             ...files.map((f) {
                               final file = f as File;
-                              final name = file.path.split(Platform.pathSeparator).last;
-                              final size = _formatFileSize(file.statSync().size);
-                              final modTime = _formatModTime(file.statSync().modified);
+                              final name = file.path
+                                  .split(Platform.pathSeparator)
+                                  .last;
+                              final size =
+                                  _formatFileSize(file.statSync().size);
+                              final modTime = _formatModTime(
+                                  file.statSync().modified);
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 6),
                                 child: ListTile(
-                                  leading: Icon(Icons.description, color: theme.colorScheme.primary),
-                                  title: Text(name, style: const TextStyle(fontSize: 14)),
+                                  leading: Icon(Icons.description,
+                                      color: theme.colorScheme.primary),
+                                  title: Text(name,
+                                      style: const TextStyle(fontSize: 14)),
                                   subtitle: Text('$size · $modTime',
-                                      style: const TextStyle(fontSize: 11)),
+                                      style:
+                                          const TextStyle(fontSize: 11)),
                                   trailing: TextButton(
-                                    onPressed: () => _importFromFile(file.path),
+                                    onPressed: () =>
+                                        _importFromFile(file.path),
                                     style: TextButton.styleFrom(
-                                      foregroundColor: theme.colorScheme.error,
+                                      foregroundColor:
+                                          theme.colorScheme.error,
                                     ),
-                                    child: const Text('导入'),
+                                    child: const Text('恢复'),
                                   ),
                                   dense: true,
                                 ),

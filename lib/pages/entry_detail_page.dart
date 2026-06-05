@@ -21,15 +21,16 @@ class EntryDetailPage extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
             tooltip: '编辑',
             onPressed: () async {
-              // 重新加载最新数据再进入编辑
               final db = AppDatabase();
-              final allEntries = await db.getAllEntries();
-              final fresh = allEntries.where((e) => e.id == entry.id).firstOrNull;
+              final fresh = await db.getEntry(entry.id!);
               if (!context.mounted) return;
               await Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => EntryEditorPage(entry: fresh ?? entry),
+                  builder: (_) => EntryEditorPage(
+                    entry: fresh ?? entry,
+                    spaceId: entry.spaceId,
+                  ),
                 ),
               );
             },
@@ -44,7 +45,8 @@ class EntryDetailPage extends StatelessWidget {
             // 时间
             Row(
               children: [
-                Icon(Icons.access_time, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                Icon(Icons.access_time,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 6),
                 Text(
                   _formatFullDateTime(entry.createdAt),
@@ -56,15 +58,31 @@ class EntryDetailPage extends StatelessWidget {
               ],
             ),
 
+            // 事项简介
+            if (entry.title != null && entry.title!.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                entry.title!,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
             // 项目
             if (entry.projectName != null) ...[
-              const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(Icons.folder_outlined, size: 16, color: theme.colorScheme.primary),
+                  Icon(Icons.folder_outlined,
+                      size: 16, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(6),
@@ -81,7 +99,7 @@ class EntryDetailPage extends StatelessWidget {
               ),
             ],
 
-            // 标签
+            // 树状标签
             if (entry.tags.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
@@ -89,7 +107,8 @@ class EntryDetailPage extends StatelessWidget {
                 runSpacing: 4,
                 children: entry.tags.map((tag) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.secondaryContainer,
                       borderRadius: BorderRadius.circular(6),
@@ -106,11 +125,39 @@ class EntryDetailPage extends StatelessWidget {
               ),
             ],
 
+            // 属性标签
+            if (entry.attributeTags.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: entry.attributeTags.map((at) {
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      at.name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),
 
-            // 全文内容
+            // 详细情况
             SelectableText(
               entry.content,
               style: const TextStyle(fontSize: 16, height: 1.7),

@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
-import '../models/project.dart';
-import '../models/project_group.dart';
+import '../models/attribute_tag.dart';
+import '../models/attribute_tag_group.dart';
 import '../database/app_database.dart';
 
-/// 项目管理页面
-/// 支持分组分层管理（项目本身无层级，通过分组归类）
-class ProjectManagerPage extends StatefulWidget {
+/// 属性标签管理页面
+/// 属性标签无层级，按分组管理
+class AttributeTagManagerPage extends StatefulWidget {
   final int spaceId;
 
-  const ProjectManagerPage({super.key, required this.spaceId});
+  const AttributeTagManagerPage({super.key, required this.spaceId});
 
   @override
-  State<ProjectManagerPage> createState() => _ProjectManagerPageState();
+  State<AttributeTagManagerPage> createState() =>
+      _AttributeTagManagerPageState();
 }
 
-class _ProjectManagerPageState extends State<ProjectManagerPage> {
+class _AttributeTagManagerPageState extends State<AttributeTagManagerPage> {
   final AppDatabase _db = AppDatabase();
-  List<Project> _projects = [];
-  List<ProjectGroup> _groups = [];
+  List<AttributeTag> _allTags = [];
+  List<AttributeTagGroup> _groups = [];
 
   int get _spaceId => widget.spaceId;
 
@@ -28,13 +29,13 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   }
 
   Future<void> _loadData() async {
-    _projects = await _db.getAllProjects(spaceId: _spaceId);
-    _groups = await _db.getAllProjectGroups(_spaceId);
+    _allTags = await _db.getAllAttributeTags(_spaceId);
+    _groups = await _db.getAllAttributeTagGroups(_spaceId);
     if (mounted) setState(() {});
   }
 
-  List<Project> _getProjectsByGroup(int? groupId) =>
-      _projects.where((p) => p.groupId == groupId).toList();
+  List<AttributeTag> _getTagsByGroup(int? groupId) =>
+      _allTags.where((t) => t.groupId == groupId).toList();
 
   // ===== 分组操作 =====
 
@@ -43,12 +44,12 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建项目分组'),
+        title: const Text('新建属性标签分组'),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '分组名称（如：工作项目、个人项目）',
+            hintText: '分组名称',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
@@ -64,12 +65,12 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
       ),
     );
     if (name != null && name.isNotEmpty) {
-      await _db.createProjectGroup(name, _spaceId);
+      await _db.createAttributeTagGroup(name, _spaceId);
       _loadData();
     }
   }
 
-  Future<void> _renameGroup(ProjectGroup g) async {
+  Future<void> _renameGroup(AttributeTagGroup g) async {
     final controller = TextEditingController(text: g.name);
     final name = await showDialog<String>(
       context: context,
@@ -95,18 +96,17 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
       ),
     );
     if (name != null && name.isNotEmpty && name != g.name) {
-      await _db.updateProjectGroupName(g.id!, name);
+      await _db.updateAttributeTagGroupName(g.id!, name);
       _loadData();
     }
   }
 
-  Future<void> _deleteGroup(ProjectGroup g) async {
+  Future<void> _deleteGroup(AttributeTagGroup g) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除分组'),
-        content: Text(
-            '确定要删除分组「${g.name}」吗？\n（组内的项目不会删除，会变为"未分组"状态）'),
+        content: Text('确定要删除分组「${g.name}」吗？\n（组内的属性标签不会删除，会变为"未分组"状态）'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -121,24 +121,24 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
       ),
     );
     if (confirm == true) {
-      await _db.deleteProjectGroup(g.id!);
+      await _db.deleteAttributeTagGroup(g.id!);
       _loadData();
     }
   }
 
-  // ===== 项目操作 =====
+  // ===== 属性标签操作 =====
 
-  Future<void> _addProject({int? groupId}) async {
+  Future<void> _addTag({int? groupId}) async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建项目'),
+        title: const Text('新建属性标签'),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '输入项目名称',
+            hintText: '标签名称',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
@@ -154,22 +154,23 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
       ),
     );
     if (name != null && name.isNotEmpty) {
-      await _db.createProject(name, groupId: groupId, spaceId: _spaceId);
+      await _db.createAttributeTag(name,
+          groupId: groupId, spaceId: _spaceId);
       _loadData();
     }
   }
 
-  Future<void> _renameProject(Project p) async {
-    final controller = TextEditingController(text: p.name);
+  Future<void> _renameTag(AttributeTag tag) async {
+    final controller = TextEditingController(text: tag.name);
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重命名项目'),
+        title: const Text('重命名标签'),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '项目名称',
+            hintText: '标签名称',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
@@ -184,33 +185,18 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
         ],
       ),
     );
-    if (name != null && name.isNotEmpty && name != p.name) {
-      await _db.updateProjectName(p.id!, name);
+    if (name != null && name.isNotEmpty && name != tag.name) {
+      await _db.updateAttributeTagName(tag.id!, name);
       _loadData();
     }
   }
 
-  Future<void> _moveProjectToGroup(Project p) async {
-    final result = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => _PickProjectGroupDialog(
-        groups: _groups,
-        currentGroupId: p.groupId,
-      ),
-    );
-    if (result != p.groupId) {
-      await _db.moveProjectToGroup(p.id!, result);
-      _loadData();
-    }
-  }
-
-  Future<void> _deleteProject(Project p) async {
+  Future<void> _deleteTag(AttributeTag tag) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除项目'),
-        content: Text(
-            '确定要删除「${p.name}」吗？\n（相关记录的"项目"字段会被清空，记录本身不受影响）'),
+        title: const Text('删除属性标签'),
+        content: Text('确定要删除属性标签「${tag.name}」吗？\n（相关记录的此标签会被移除）'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -225,7 +211,7 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
       ),
     );
     if (confirm == true) {
-      await _db.deleteProject(p.id!);
+      await _db.deleteAttributeTag(tag.id!);
       _loadData();
     }
   }
@@ -233,54 +219,63 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ungrouped = _getProjectsByGroup(null);
+    final ungrouped = _getTagsByGroup(null);
+    final hasGroups = _groups.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('项目管理'),
+        title: const Text('属性标签'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.folder_outlined),
-            tooltip: '新建分组',
-            onPressed: _addGroup,
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'add_group') _addGroup();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'add_group',
+                child: Text('新建分组'),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '新建项目',
-            onPressed: () => _addProject(),
+            tooltip: '新建属性标签',
+            onPressed: () => _addTag(),
           ),
         ],
       ),
-      body: _projects.isEmpty && _groups.isEmpty
+      body: _allTags.isEmpty && _groups.isEmpty
           ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_outlined, size: 80, color: Colors.grey),
+                  Icon(Icons.turned_in_outlined,
+                      size: 80, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text('还没有项目',
+                  Text('还没有属性标签',
                       style: TextStyle(fontSize: 18, color: Colors.grey)),
                   SizedBox(height: 8),
-                  Text('点击右上角 + 创建项目',
-                      style: TextStyle(color: Colors.grey)),
+                  Text('点击右上角 + 创建', style: TextStyle(color: Colors.grey)),
                 ],
               ),
             )
           : ListView(
               padding: const EdgeInsets.all(12),
               children: [
+                // 各分组
                 ..._groups.map((g) {
-                  final projects = _getProjectsByGroup(g.id);
+                  final tags = _getTagsByGroup(g.id);
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 分组标题
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
                           child: Row(
                             children: [
-                              Icon(Icons.folder,
+                              Icon(Icons.folder_outlined,
                                   size: 18, color: theme.colorScheme.primary),
                               const SizedBox(width: 6),
                               Text(g.name,
@@ -288,24 +283,24 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600)),
                               const Spacer(),
-                              IconButton(
-                                icon: const Icon(Icons.add, size: 18),
-                                tooltip: '在此分组新建项目',
-                                onPressed: () => _addProject(groupId: g.id),
-                              ),
                               PopupMenuButton<String>(
                                 itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                      value: 'add',
+                                      child: Text('在此分组新建标签')),
                                   const PopupMenuItem(
                                       value: 'rename',
                                       child: Text('重命名分组')),
                                   const PopupMenuItem(
                                       value: 'delete',
                                       child: Text('删除分组',
-                                          style:
-                                              TextStyle(color: Colors.red))),
+                                          style: TextStyle(color: Colors.red))),
                                 ],
                                 onSelected: (v) {
                                   switch (v) {
+                                    case 'add':
+                                      _addTag(groupId: g.id);
+                                      break;
                                     case 'rename':
                                       _renameGroup(g);
                                       break;
@@ -318,7 +313,7 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                             ],
                           ),
                         ),
-                        if (projects.isEmpty)
+                        if (tags.isEmpty)
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
                             child: Text('（空）',
@@ -326,15 +321,16 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                                     fontSize: 13, color: Colors.grey)),
                           )
                         else
-                          ...projects.map((p) => _buildProjectTile(p, theme)),
+                          ...tags.map(
+                              (t) => _buildTagTile(t, theme, inGroup: true)),
                       ],
                     ),
                   );
                 }),
 
-                // 未分组项目
+                // 未分组
                 if (ungrouped.isNotEmpty) ...[
-                  if (_groups.isNotEmpty)
+                  if (hasGroups)
                     Padding(
                       padding: const EdgeInsets.only(top: 8, bottom: 4),
                       child: Text('未分组',
@@ -343,19 +339,21 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                               color: theme.colorScheme.onSurfaceVariant,
                               fontWeight: FontWeight.w500)),
                     ),
-                  ...ungrouped.map((p) => _buildProjectTile(p, theme)),
+                  ...ungrouped.map((t) => _buildTagTile(t, theme, inGroup: false)),
+                  const SizedBox(height: 40),
                 ],
-                const SizedBox(height: 40),
               ],
             ),
     );
   }
 
-  Widget _buildProjectTile(Project p, ThemeData theme) {
+  Widget _buildTagTile(AttributeTag tag, ThemeData theme,
+      {required bool inGroup}) {
     return ListTile(
       dense: true,
-      leading: Icon(Icons.folder_outlined, color: theme.colorScheme.primary),
-      title: Text(p.name, style: const TextStyle(fontSize: 14)),
+      leading: Icon(Icons.turned_in,
+          size: 18, color: theme.colorScheme.secondary),
+      title: Text(tag.name, style: const TextStyle(fontSize: 14)),
       trailing: PopupMenuButton<String>(
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'edit', child: Text('重命名')),
@@ -366,16 +364,26 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
             child: Text('删除', style: TextStyle(color: Colors.red)),
           ),
         ],
-        onSelected: (v) {
+        onSelected: (v) async {
           switch (v) {
             case 'edit':
-              _renameProject(p);
+              _renameTag(tag);
               break;
             case 'move':
-              _moveProjectToGroup(p);
+              final result = await showDialog<int?>(
+                context: context,
+                builder: (ctx) => _PickGroupDialog(
+                  groups: _groups,
+                  currentGroupId: tag.groupId,
+                ),
+              );
+              if (result != tag.groupId) {
+                await _db.moveAttributeTagToGroup(tag.id!, result);
+                _loadData();
+              }
               break;
             case 'delete':
-              _deleteProject(p);
+              _deleteTag(tag);
               break;
           }
         },
@@ -384,12 +392,12 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   }
 }
 
-/// 选择项目分组弹窗
-class _PickProjectGroupDialog extends StatelessWidget {
-  final List<ProjectGroup> groups;
+/// 选择分组弹窗
+class _PickGroupDialog extends StatelessWidget {
+  final List<AttributeTagGroup> groups;
   final int? currentGroupId;
 
-  const _PickProjectGroupDialog({
+  const _PickGroupDialog({
     required this.groups,
     required this.currentGroupId,
   });

@@ -1,19 +1,28 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import '../database/app_database.dart';
 import '../models/entry.dart';
+import '../models/space.dart';
 import 'entry_detail_page.dart';
 import 'entry_editor_page.dart';
 import 'tag_manager_page.dart';
+import 'attribute_tag_manager_page.dart';
 import 'project_manager_page.dart';
 import 'list_view_page.dart';
 import 'data_migration_page.dart';
 import '../services/export_service.dart';
 
-
-
+/// 首页时间线
+/// 展示当前入口下的所有记录，按天分组
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final int spaceId;
+  final VoidCallback onSwitchSpace;
+
+  const HomePage({
+    super.key,
+    required this.spaceId,
+    required this.onSwitchSpace,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -24,11 +33,35 @@ class _HomePageState extends State<HomePage> {
   List<Entry> _entries = [];
   bool _loading = true;
   String? _loadError;
+  Space? _currentSpace;
+
+  int get _spaceId => widget.spaceId;
 
   @override
   void initState() {
     super.initState();
+    _loadSpace();
     _loadEntries();
+  }
+
+  @override
+  void didUpdateWidget(HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.spaceId != widget.spaceId) {
+      _loadSpace();
+      _loadEntries();
+    }
+  }
+
+  Future<void> _loadSpace() async {
+    final spaces = await _db.getAllSpaces();
+    if (!mounted) return;
+    setState(() {
+      _currentSpace = spaces.cast<Space?>().firstWhere(
+            (s) => s!.id == _spaceId,
+            orElse: () => null,
+          );
+    });
   }
 
   Future<void> _loadEntries() async {
@@ -37,7 +70,7 @@ class _HomePageState extends State<HomePage> {
       _loadError = null;
     });
     try {
-      final entries = await _db.getAllEntries().timeout(
+      final entries = await _db.getAllEntries(spaceId: _spaceId).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           debugPrint('加载记录超时');
@@ -64,7 +97,8 @@ class _HomePageState extends State<HomePage> {
   Map<String, List<Entry>> _groupByDate(List<Entry> entries) {
     final map = <String, List<Entry>>{};
     for (final entry in entries) {
-      final dateKey = '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')}';
+      final dateKey =
+          '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')}';
       map.putIfAbsent(dateKey, () => []);
       map[dateKey]!.add(entry);
     }
@@ -74,7 +108,8 @@ class _HomePageState extends State<HomePage> {
   String _formatDateKey(String key) {
     final parts = key.split('-');
     final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-    final date = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    final date =
+        DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
     final weekday = weekdays[date.weekday - 1];
     return '${parts[0]}年${parts[1].replaceFirst(RegExp(r'^0'), '')}月${parts[2].replaceFirst(RegExp(r'^0'), '')}日 周$weekday';
   }
@@ -86,7 +121,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _exportToExcel() async {
     try {
       final exportService = ExportService();
-      final filePath = await exportService.exportToExcel();
+      final filePath = await exportService.exportToExcel(spaceId: _spaceId);
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -112,7 +147,18 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('生活记录'),
+        title: GestureDetector(
+          onTap: widget.onSwitchSpace,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_currentSpace?.name ?? '记录'),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, size: 20,
+                  color: Theme.of(context).colorScheme.primary),
+            ],
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.list_alt),
@@ -120,18 +166,34 @@ class _HomePageState extends State<HomePage> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ListViewPage()),
+                MaterialPageRoute(
+                  builder: (_) => ListViewPage(spaceId: _spaceId),
+                ),
               );
               _loadEntries();
             },
           ),
           IconButton(
             icon: const Icon(Icons.label_outline),
-            tooltip: '标签管理',
+            tooltip: '树状标签',
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const TagManagerPage()),
+                MaterialPageRoute(
+                  builder: (_) => TagManagerPage(spaceId: _spaceId),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.turned_in_not_outlined),
+            tooltip: '属性标签',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AttributeTagManagerPage(spaceId: _spaceId),
+                ),
               );
             },
           ),
@@ -141,7 +203,9 @@ class _HomePageState extends State<HomePage> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ProjectManagerPage()),
+                MaterialPageRoute(
+                  builder: (_) => ProjectManagerPage(spaceId: _spaceId),
+                ),
               );
             },
           ),
@@ -157,9 +221,13 @@ class _HomePageState extends State<HomePage> {
                   if (!context.mounted) return;
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const DataMigrationPage()),
+                    MaterialPageRoute(
+                        builder: (_) => const DataMigrationPage()),
                   );
                   _loadEntries();
+                  break;
+                case 'switch_space':
+                  widget.onSwitchSpace();
                   break;
               }
             },
@@ -177,7 +245,16 @@ class _HomePageState extends State<HomePage> {
                 value: 'data_migration',
                 child: ListTile(
                   leading: Icon(Icons.sync_alt),
-                  title: Text('数据迁移'),
+                  title: Text('数据备份'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'switch_space',
+                child: ListTile(
+                  leading: Icon(Icons.swap_horiz),
+                  title: Text('切换入口'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -195,14 +272,17 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                        const Icon(Icons.error_outline,
+                            size: 64, color: Colors.red),
                         const SizedBox(height: 16),
-                        const Text('读取数据失败', style: TextStyle(fontSize: 18)),
+                        const Text('读取数据失败',
+                            style: TextStyle(fontSize: 18)),
                         const SizedBox(height: 8),
                         Text(
                           _loadError!,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                          style: TextStyle(
+                              color: Colors.grey[600], fontSize: 13),
                         ),
                         const SizedBox(height: 16),
                         FilledButton.tonal(
@@ -218,50 +298,56 @@ class _HomePageState extends State<HomePage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.edit_note, size: 80, color: Colors.grey),
+                          Icon(Icons.edit_note,
+                              size: 80, color: Colors.grey),
                           SizedBox(height: 16),
-                          Text('还没有记录', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                          Text('还没有记录',
+                              style:
+                                  TextStyle(fontSize: 18, color: Colors.grey)),
                           SizedBox(height: 8),
-                          Text('点击右下角 + 开始记录', style: TextStyle(color: Colors.grey)),
+                          Text('点击右下角 + 开始记录',
+                              style: TextStyle(color: Colors.grey)),
                         ],
                       ),
                     )
                   : RefreshIndicator(
-                  onRefresh: _loadEntries,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: grouped.keys.length,
-                    itemBuilder: (context, index) {
-                      final dateKey = grouped.keys.elementAt(index);
-                      final dayEntries = grouped[dateKey]!;
-                      return _DayGroup(
-                        dateLabel: _formatDateKey(dateKey),
-                        entries: dayEntries,
-                        formatTime: _formatTime,
-                        onTap: (entry) async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => EntryDetailPage(entry: entry),
-                            ),
+                      onRefresh: _loadEntries,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: grouped.keys.length,
+                        itemBuilder: (context, index) {
+                          final dateKey = grouped.keys.elementAt(index);
+                          final dayEntries = grouped[dateKey]!;
+                          return _DayGroup(
+                            dateLabel: _formatDateKey(dateKey),
+                            entries: dayEntries,
+                            formatTime: _formatTime,
+                            onTap: (entry) async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      EntryDetailPage(entry: entry),
+                                ),
+                              );
+                              _loadEntries();
+                            },
+                            onDelete: (entry) async {
+                              await _db.deleteEntry(entry.id!);
+                              _loadEntries();
+                            },
                           );
-                          _loadEntries();
                         },
-                        onDelete: (entry) async {
-                          await _db.deleteEntry(entry.id!);
-                          _loadEntries();
-                        },
-                      );
-                    },
-                  ),
-                ),
+                      ),
+                    ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const EntryEditorPage()),
+            MaterialPageRoute(
+              builder: (_) => EntryEditorPage(spaceId: _spaceId),
+            ),
           );
-          // 不管是否保存成功，返回时都刷新记录
           _loadEntries();
         },
         child: const Icon(Icons.add),
@@ -304,7 +390,8 @@ class _DayGroupState extends State<_DayGroup> {
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Icon(
@@ -323,7 +410,8 @@ class _DayGroupState extends State<_DayGroup> {
                   ),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
@@ -393,62 +481,113 @@ class _EntryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 事项简介（如果有）
+                    if (entry.title != null && entry.title!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          entry.title!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
                     // 内容截断（最多2行）
                     Text(
                       entry.content,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15, height: 1.4),
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        color: entry.title != null && entry.title!.isNotEmpty
+                            ? theme.colorScheme.onSurfaceVariant
+                            : theme.colorScheme.onSurface,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    // 项目名
-                    if (entry.projectName != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.folder_outlined, size: 11,
-                                  color: theme.colorScheme.onPrimaryContainer),
-                              const SizedBox(width: 3),
-                              Text(
+                    // 项目名 + 标签
+                    Row(
+                      children: [
+                        if (entry.projectName != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
                                 entry.projectName!,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: theme.colorScheme.onPrimaryContainer,
+                                  color:
+                                      theme.colorScheme.onPrimaryContainer,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                    // 标签
-                    if (entry.tags.isNotEmpty)
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 2,
-                        children: entry.tags.map((tag) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.secondaryContainer,
-                              borderRadius: BorderRadius.circular(6),
+                        if (entry.tags.isNotEmpty)
+                          Flexible(
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 2,
+                              children: entry.tags.map((tag) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        theme.colorScheme.secondaryContainer,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    tag.name,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme
+                                          .colorScheme.onSecondaryContainer,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
-                            child: Text(
-                              tag.name,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSecondaryContainer,
+                          ),
+                      ],
+                    ),
+                    // 属性标签
+                    if (entry.attributeTags.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          children: entry.attributeTags.map((at) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
                               ),
-                            ),
-                          );
-                        }).toList(),
+                              child: Text(
+                                at.name,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
                   ],
                 ),
@@ -456,7 +595,8 @@ class _EntryCard extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
+            icon: Icon(Icons.delete_outline,
+                size: 18, color: theme.colorScheme.error),
             onPressed: () {
               showDialog(
                 context: context,
@@ -464,13 +604,17 @@ class _EntryCard extends StatelessWidget {
                   title: const Text('删除记录'),
                   content: const Text('确定要删除这条记录吗？'),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('取消')),
                     TextButton(
                       onPressed: () {
                         Navigator.pop(ctx);
                         onDelete();
                       },
-                      child: Text('删除', style: TextStyle(color: theme.colorScheme.error)),
+                      child: Text('删除',
+                          style:
+                              TextStyle(color: theme.colorScheme.error)),
                     ),
                   ],
                 ),
@@ -482,9 +626,3 @@ class _EntryCard extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
