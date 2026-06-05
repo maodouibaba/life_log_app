@@ -29,12 +29,12 @@ class _ListViewPageState extends State<ListViewPage> {
   bool _selectMode = false;
   final Set<int> _selectedIds = {};
 
-  // 筛选条件
+  // 筛选条件（多选 + 组合）
   DateTime? _startDate;
   DateTime? _endDate;
-  int? _filterTagId;
-  int? _filterProjectId;
-  int? _filterAttributeTagId;
+  final Set<int> _filterTagIds = {};
+  final Set<int> _filterProjectIds = {};
+  final Set<int> _filterAttributeTagIds = {};
 
   // 关键词搜索
   final _searchController = TextEditingController();
@@ -74,35 +74,17 @@ class _ListViewPageState extends State<ListViewPage> {
         onTimeout: () => [],
       );
 
-      List<Entry> entries;
-
-      // 优先关键词搜索
-      if (_searchKeyword.isNotEmpty) {
-        entries = await _db
-            .searchEntries(_searchKeyword, spaceId: _spaceId)
-            .timeout(const Duration(seconds: 10), onTimeout: () => []);
-      } else if (_filterTagId != null) {
-        entries = await _db
-            .getEntriesByTag(_filterTagId!, spaceId: _spaceId)
-            .timeout(const Duration(seconds: 10), onTimeout: () => []);
-      } else if (_filterAttributeTagId != null) {
-        entries = await _db
-            .getEntriesByAttributeTag(_filterAttributeTagId!, spaceId: _spaceId)
-            .timeout(const Duration(seconds: 10), onTimeout: () => []);
-      } else if (_startDate != null && _endDate != null) {
-        entries = await _db
-            .getEntriesByDateRange(_startDate!, _endDate!, spaceId: _spaceId)
-            .timeout(const Duration(seconds: 10), onTimeout: () => []);
-      } else if (_filterProjectId != null) {
-        entries = await _db.getAllEntries(spaceId: _spaceId);
-        entries =
-            entries.where((e) => e.projectId == _filterProjectId).toList();
-      } else {
-        entries = await _db.getAllEntries(spaceId: _spaceId).timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => [],
-        );
-      }
+      // 组合筛选：所有活跃条件 AND 组合
+      final entries = await _db.getEntriesByFilters(
+        spaceId: _spaceId,
+        tagIds: _filterTagIds.isNotEmpty ? _filterTagIds : null,
+        attributeTagIds:
+            _filterAttributeTagIds.isNotEmpty ? _filterAttributeTagIds : null,
+        projectIds: _filterProjectIds.isNotEmpty ? _filterProjectIds : null,
+        startDate: _startDate,
+        endDate: _endDate,
+        keyword: _searchKeyword.isNotEmpty ? _searchKeyword : null,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => []);
 
       if (!mounted) return;
       setState(() {
@@ -135,9 +117,6 @@ class _ListViewPageState extends State<ListViewPage> {
       setState(() {
         _startDate = range.start;
         _endDate = range.end;
-        _filterTagId = null;
-        _filterProjectId = null;
-        _filterAttributeTagId = null;
       });
       _loadData();
     }
@@ -157,28 +136,24 @@ class _ListViewPageState extends State<ListViewPage> {
       setState(() {
         _startDate = dayStart;
         _endDate = dayEnd;
-        _filterTagId = null;
-        _filterProjectId = null;
-        _filterAttributeTagId = null;
       });
       _loadData();
     }
   }
 
   Future<void> _pickTag() async {
-    final selected = await showDialog<int>(
+    final result = await showDialog<Set<int>>(
       context: context,
-      builder: (ctx) => _TagPickerDialog(allTags: _allTags),
+      builder: (ctx) => _MultiTagFilterDialog(
+        allTags: _allTags,
+        initialSelectedIds: _filterTagIds,
+      ),
     );
 
-    if (selected != null) {
-      setState(() {
-        _filterTagId = selected;
-        _filterAttributeTagId = null;
-        _startDate = null;
-        _endDate = null;
-        _filterProjectId = null;
-      });
+    if (result != null) {
+      setState(() => _filterTagIds
+        ..clear()
+        ..addAll(result));
       _loadData();
     }
   }
@@ -186,19 +161,18 @@ class _ListViewPageState extends State<ListViewPage> {
   Future<void> _pickAttributeTag() async {
     _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
     if (!mounted) return;
-    final selected = await showDialog<int>(
+    final result = await showDialog<Set<int>>(
       context: context,
-      builder: (ctx) => _AttributeTagListDialog(tags: _allAttributeTags),
+      builder: (ctx) => _MultiAttributeTagFilterDialog(
+        tags: _allAttributeTags,
+        initialSelectedIds: _filterAttributeTagIds,
+      ),
     );
 
-    if (selected != null) {
-      setState(() {
-        _filterAttributeTagId = selected;
-        _filterTagId = null;
-        _startDate = null;
-        _endDate = null;
-        _filterProjectId = null;
-      });
+    if (result != null) {
+      setState(() => _filterAttributeTagIds
+        ..clear()
+        ..addAll(result));
       _loadData();
     }
   }
@@ -207,19 +181,18 @@ class _ListViewPageState extends State<ListViewPage> {
     _allProjects = await _db.getAllProjects(spaceId: _spaceId);
     if (!mounted) return;
 
-    final selected = await showDialog<int>(
+    final result = await showDialog<Set<int>>(
       context: context,
-      builder: (ctx) => _ProjectPickerDialog(projects: _allProjects),
+      builder: (ctx) => _MultiProjectFilterDialog(
+        projects: _allProjects,
+        initialSelectedIds: _filterProjectIds,
+      ),
     );
 
-    if (selected != null) {
-      setState(() {
-        _filterProjectId = selected;
-        _filterTagId = null;
-        _filterAttributeTagId = null;
-        _startDate = null;
-        _endDate = null;
-      });
+    if (result != null) {
+      setState(() => _filterProjectIds
+        ..clear()
+        ..addAll(result));
       _loadData();
     }
   }
@@ -228,9 +201,9 @@ class _ListViewPageState extends State<ListViewPage> {
     setState(() {
       _startDate = null;
       _endDate = null;
-      _filterTagId = null;
-      _filterProjectId = null;
-      _filterAttributeTagId = null;
+      _filterTagIds.clear();
+      _filterProjectIds.clear();
+      _filterAttributeTagIds.clear();
       _searchKeyword = '';
       _searchController.clear();
     });
@@ -243,37 +216,81 @@ class _ListViewPageState extends State<ListViewPage> {
   }
 
   bool get _hasFilter =>
-      _filterTagId != null ||
-      _filterProjectId != null ||
-      _filterAttributeTagId != null ||
+      _filterTagIds.isNotEmpty ||
+      _filterProjectIds.isNotEmpty ||
+      _filterAttributeTagIds.isNotEmpty ||
       (_startDate != null && _endDate != null) ||
       _searchKeyword.isNotEmpty;
 
-  String _getFilterLabel() {
-    if (_searchKeyword.isNotEmpty) return '搜索：$_searchKeyword';
-    if (_filterTagId != null) {
-      final tag = _allTags.firstWhere((t) => t.id == _filterTagId);
-      return '树状标签：${tag.name}';
+  /// 获取所有活跃筛选条件的标签列表
+  List<Widget> _buildFilterChips(ThemeData theme) {
+    final chips = <Widget>[];
+    void addChip(IconData icon, String label, VoidCallback onRemove) {
+      chips.add(Padding(
+        padding: const EdgeInsets.only(right: 4, bottom: 2),
+        child: Chip(
+          avatar: Icon(icon, size: 14),
+          label: Text(label, style: const TextStyle(fontSize: 11)),
+          onDeleted: _selectMode ? null : onRemove,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+        ),
+      ));
     }
-    if (_filterAttributeTagId != null) {
-      final at = _allAttributeTags
-          .firstWhere((t) => t.id == _filterAttributeTagId);
-      return '属性标签：${at.name}';
+
+    if (_searchKeyword.isNotEmpty) {
+      addChip(Icons.search, '搜索：$_searchKeyword', () {
+        _searchController.clear();
+        _doSearch('');
+      });
     }
-    if (_filterProjectId != null) {
-      final p = _allProjects.firstWhere((p) => p.id == _filterProjectId);
-      return '项目：${p.name}';
+    if (_filterTagIds.isNotEmpty) {
+      final names = _allTags
+          .where((t) => _filterTagIds.contains(t.id))
+          .map((t) => t.name)
+          .join(', ');
+      addChip(Icons.label, '标签：$names', () {
+        setState(() => _filterTagIds.clear());
+        _loadData();
+      });
+    }
+    if (_filterAttributeTagIds.isNotEmpty) {
+      final names = _allAttributeTags
+          .where((t) => _filterAttributeTagIds.contains(t.id))
+          .map((t) => t.name)
+          .join(', ');
+      addChip(Icons.turned_in_not, '属性：$names', () {
+        setState(() => _filterAttributeTagIds.clear());
+        _loadData();
+      });
+    }
+    if (_filterProjectIds.isNotEmpty) {
+      final names = _allProjects
+          .where((p) => _filterProjectIds.contains(p.id))
+          .map((p) => p.name)
+          .join(', ');
+      addChip(Icons.folder_outlined, '项目：$names', () {
+        setState(() => _filterProjectIds.clear());
+        _loadData();
+      });
     }
     if (_startDate != null && _endDate != null) {
       final isSingle = _startDate!.day == _endDate!.day &&
           _startDate!.month == _endDate!.month &&
           _startDate!.year == _endDate!.year;
-      if (isSingle) {
-        return '${_startDate!.year}-${_startDate!.month.toString().padLeft(2, '0')}-${_startDate!.day.toString().padLeft(2, '0')}';
-      }
-      return '${_startDate!.month}/${_startDate!.day} - ${_endDate!.month}/${_endDate!.day}';
+      final label = isSingle
+          ? '${_startDate!.year}-${_startDate!.month.toString().padLeft(2, '0')}-${_startDate!.day.toString().padLeft(2, '0')}'
+          : '${_startDate!.month}/${_startDate!.day} - ${_endDate!.month}/${_endDate!.day}';
+      addChip(Icons.date_range, label, () {
+        setState(() {
+          _startDate = null;
+          _endDate = null;
+        });
+        _loadData();
+      });
     }
-    return '全部记录';
+    return chips;
   }
 
   String _formatDateTime(DateTime dt) {
@@ -289,6 +306,26 @@ class _ListViewPageState extends State<ListViewPage> {
         final map = <String, List<Entry>>{};
         for (final entry in entries) {
           final key = entry.projectName ?? '未分组';
+          map.putIfAbsent(key, () => []);
+          map[key]!.add(entry);
+        }
+        return map;
+      case 'tag':
+        final map = <String, List<Entry>>{};
+        for (final entry in entries) {
+          final key = entry.tags.isNotEmpty
+              ? entry.tags.first.name
+              : '未标签';
+          map.putIfAbsent(key, () => []);
+          map[key]!.add(entry);
+        }
+        return map;
+      case 'attribute_tag':
+        final map = <String, List<Entry>>{};
+        for (final entry in entries) {
+          final key = entry.attributeTags.isNotEmpty
+              ? entry.attributeTags.first.name
+              : '未标签';
           map.putIfAbsent(key, () => []);
           map[key]!.add(entry);
         }
@@ -481,7 +518,7 @@ class _ListViewPageState extends State<ListViewPage> {
               children: [
                 _FilterChip(
                   icon: Icons.date_range,
-                  label: _startDate != null ? '日期' : '日期',
+                  label: '日期',
                   active: _startDate != null,
                   onTap: _selectMode ? null : _pickSingleDay,
                   onLongPress: _selectMode ? null : _pickDateRange,
@@ -489,31 +526,24 @@ class _ListViewPageState extends State<ListViewPage> {
                 const SizedBox(width: 4),
                 _FilterChip(
                   icon: Icons.label,
-                  label: _filterTagId != null ? '树状标签' : '树状标签',
-                  active: _filterTagId != null,
+                  label: '树状标签',
+                  active: _filterTagIds.isNotEmpty,
                   onTap: _selectMode ? null : _pickTag,
                 ),
                 const SizedBox(width: 4),
                 _FilterChip(
                   icon: Icons.turned_in_not,
-                  label: _filterAttributeTagId != null ? '属性标签' : '属性标签',
-                  active: _filterAttributeTagId != null,
+                  label: '属性标签',
+                  active: _filterAttributeTagIds.isNotEmpty,
                   onTap: _selectMode ? null : _pickAttributeTag,
                 ),
                 const SizedBox(width: 4),
                 _FilterChip(
                   icon: Icons.folder_outlined,
-                  label: _filterProjectId != null ? '项目' : '项目',
-                  active: _filterProjectId != null,
+                  label: '项目',
+                  active: _filterProjectIds.isNotEmpty,
                   onTap: _selectMode ? null : _pickProject,
                 ),
-                if (_hasFilter) ...[
-                  const SizedBox(width: 4),
-                  TextButton(
-                    onPressed: _selectMode ? null : _clearFilter,
-                    child: const Text('清除'),
-                  ),
-                ],
                 const Spacer(),
                 // 分组方式切换
                 PopupMenuButton<String>(
@@ -532,6 +562,16 @@ class _ListViewPageState extends State<ListViewPage> {
                       child: const Text('按项目'),
                     ),
                     CheckedPopupMenuItem(
+                      value: 'tag',
+                      checked: _groupBy == 'tag',
+                      child: const Text('按树状标签'),
+                    ),
+                    CheckedPopupMenuItem(
+                      value: 'attribute_tag',
+                      checked: _groupBy == 'attribute_tag',
+                      child: const Text('按属性标签'),
+                    ),
+                    CheckedPopupMenuItem(
                       value: 'none',
                       checked: _groupBy == 'none',
                       child: const Text('不分组'),
@@ -548,21 +588,23 @@ class _ListViewPageState extends State<ListViewPage> {
             ),
           ),
 
-          // 当前筛选/搜索标签
+          // 当前活跃筛选条件（多标签展示）
           if (_hasFilter)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Chip(
-                avatar: Icon(
-                    _searchKeyword.isNotEmpty
-                        ? Icons.search
-                        : Icons.filter_list,
-                    size: 16),
-                label: Text(_getFilterLabel(),
-                    style: const TextStyle(fontSize: 12)),
-                onDeleted: _selectMode ? null : _clearFilter,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              child: Wrap(
+                children: [
+                  ..._buildFilterChips(theme),
+                  TextButton.icon(
+                    onPressed: _selectMode ? null : _clearFilter,
+                    icon: const Icon(Icons.clear_all, size: 16),
+                    label: const Text('清除', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -779,37 +821,58 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _TagPickerDialog extends StatefulWidget {
+/// 树状标签多选弹窗（用于筛选，有初始选中状态）
+class _MultiTagFilterDialog extends StatefulWidget {
   final List<Tag> allTags;
-  const _TagPickerDialog({required this.allTags});
+  final Set<int> initialSelectedIds;
+
+  const _MultiTagFilterDialog({
+    required this.allTags,
+    required this.initialSelectedIds,
+  });
 
   @override
-  State<_TagPickerDialog> createState() => _TagPickerDialogState();
+  State<_MultiTagFilterDialog> createState() => _MultiTagFilterDialogState();
 }
 
-class _TagPickerDialogState extends State<_TagPickerDialog> {
+class _MultiTagFilterDialogState extends State<_MultiTagFilterDialog> {
+  late final Set<int> _selectedIds;
   final Set<int> _expandedIds = {};
   List<Tag> get _rootTags =>
       widget.allTags.where((t) => t.parentId == null).toList();
 
   @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set.from(widget.initialSelectedIds);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('选择树状标签'),
+      title: Text('筛选树状标签（已选 ${_selectedIds.length}）'),
       content: SizedBox(
         width: double.maxFinite,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: _rootTags.length,
-          itemBuilder: (context, index) {
-            return _buildTagNode(_rootTags[index], 0);
-          },
-        ),
+        child: _rootTags.isEmpty
+            ? const Text('暂无标签')
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: _rootTags.length,
+                itemBuilder: (context, index) {
+                  return _buildTagNode(_rootTags[index], 0);
+                },
+              ),
       ),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
+        TextButton(
+          onPressed: _selectedIds.isEmpty
+              ? null
+              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          child: const Text('确定'),
+        ),
       ],
     );
   }
@@ -819,6 +882,7 @@ class _TagPickerDialogState extends State<_TagPickerDialog> {
         widget.allTags.where((t) => t.parentId == tag.id).toList();
     final hasChildren = children.isNotEmpty;
     final isExpanded = _expandedIds.contains(tag.id);
+    final isSelected = _selectedIds.contains(tag.id);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -827,29 +891,41 @@ class _TagPickerDialogState extends State<_TagPickerDialog> {
           padding: EdgeInsets.only(left: level * 20.0),
           child: ListTile(
             dense: true,
-            leading: hasChildren
-                ? Icon(isExpanded ? Icons.expand_more : Icons.chevron_right,
-                    size: 18)
-                : const Icon(Icons.label_outline, size: 18),
-            title: Text(tag.name),
-            onTap: () {
-              if (tag.id != null) Navigator.pop(context, tag.id);
-            },
-            trailing: hasChildren
-                ? IconButton(
-                    icon: Icon(
-                        isExpanded ? Icons.expand_less : Icons.expand_more,
-                        size: 16),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => setState(() {
+            leading: Checkbox(
+              value: isSelected,
+              onChanged: (_) {
+                setState(() {
+                  if (isSelected) {
+                    _selectedIds.remove(tag.id!);
+                  } else {
+                    _selectedIds.add(tag.id!);
+                  }
+                });
+              },
+            ),
+            title: Text(tag.name,
+                style:
+                    TextStyle(fontWeight: isSelected ? FontWeight.w600 : null)),
+            onTap: hasChildren
+                ? () => setState(() {
                       if (isExpanded) {
                         _expandedIds.remove(tag.id!);
                       } else {
                         _expandedIds.add(tag.id!);
                       }
-                    }),
-                  )
+                    })
+                : () {
+                    setState(() {
+                      if (isSelected) {
+                        _selectedIds.remove(tag.id!);
+                      } else {
+                        _selectedIds.add(tag.id!);
+                      }
+                    });
+                  },
+            trailing: hasChildren
+                ? Icon(isExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16)
                 : null,
           ),
         ),
@@ -860,29 +936,64 @@ class _TagPickerDialogState extends State<_TagPickerDialog> {
   }
 }
 
-/// 属性标签选择弹窗（单选，用于筛选）
-class _AttributeTagListDialog extends StatelessWidget {
+/// 属性标签多选弹窗（用于筛选，有初始选中状态）
+class _MultiAttributeTagFilterDialog extends StatefulWidget {
   final List<AttributeTag> tags;
+  final Set<int> initialSelectedIds;
 
-  const _AttributeTagListDialog({required this.tags});
+  const _MultiAttributeTagFilterDialog({
+    required this.tags,
+    required this.initialSelectedIds,
+  });
+
+  @override
+  State<_MultiAttributeTagFilterDialog> createState() =>
+      _MultiAttributeTagFilterDialogState();
+}
+
+class _MultiAttributeTagFilterDialogState
+    extends State<_MultiAttributeTagFilterDialog> {
+  late final Set<int> _selectedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set.from(widget.initialSelectedIds);
+  }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('选择属性标签'),
+      title: Text('筛选属性标签（已选 ${_selectedIds.length}）'),
       content: SizedBox(
         width: double.maxFinite,
-        child: tags.isEmpty
+        child: widget.tags.isEmpty
             ? const Text('暂无属性标签')
             : ListView.builder(
                 shrinkWrap: true,
-                itemCount: tags.length,
+                itemCount: widget.tags.length,
                 itemBuilder: (context, index) {
-                  final t = tags[index];
+                  final t = widget.tags[index];
+                  final isSelected = _selectedIds.contains(t.id);
                   return ListTile(
-                    leading: const Icon(Icons.turned_in_not),
+                    leading: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => setState(() {
+                        if (isSelected) {
+                          _selectedIds.remove(t.id!);
+                        } else {
+                          _selectedIds.add(t.id!);
+                        }
+                      }),
+                    ),
                     title: Text(t.name),
-                    onTap: () => Navigator.pop(context, t.id),
+                    onTap: () => setState(() {
+                      if (isSelected) {
+                        _selectedIds.remove(t.id!);
+                      } else {
+                        _selectedIds.add(t.id!);
+                      }
+                    }),
                     dense: true,
                   );
                 },
@@ -892,32 +1003,75 @@ class _AttributeTagListDialog extends StatelessWidget {
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
+        TextButton(
+          onPressed: _selectedIds.isEmpty
+              ? null
+              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          child: const Text('确定'),
+        ),
       ],
     );
   }
 }
 
-class _ProjectPickerDialog extends StatelessWidget {
+/// 项目多选弹窗（用于筛选，有初始选中状态）
+class _MultiProjectFilterDialog extends StatefulWidget {
   final List<Project> projects;
-  const _ProjectPickerDialog({required this.projects});
+  final Set<int> initialSelectedIds;
+
+  const _MultiProjectFilterDialog({
+    required this.projects,
+    required this.initialSelectedIds,
+  });
+
+  @override
+  State<_MultiProjectFilterDialog> createState() =>
+      _MultiProjectFilterDialogState();
+}
+
+class _MultiProjectFilterDialogState
+    extends State<_MultiProjectFilterDialog> {
+  late final Set<int> _selectedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set.from(widget.initialSelectedIds);
+  }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('选择项目'),
+      title: Text('筛选项目（已选 ${_selectedIds.length}）'),
       content: SizedBox(
         width: double.maxFinite,
-        child: projects.isEmpty
+        child: widget.projects.isEmpty
             ? const Text('暂无项目')
             : ListView.builder(
                 shrinkWrap: true,
-                itemCount: projects.length,
+                itemCount: widget.projects.length,
                 itemBuilder: (context, index) {
-                  final p = projects[index];
+                  final p = widget.projects[index];
+                  final isSelected = _selectedIds.contains(p.id);
                   return ListTile(
-                    leading: const Icon(Icons.folder_outlined),
+                    leading: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => setState(() {
+                        if (isSelected) {
+                          _selectedIds.remove(p.id!);
+                        } else {
+                          _selectedIds.add(p.id!);
+                        }
+                      }),
+                    ),
                     title: Text(p.name),
-                    onTap: () => Navigator.pop(context, p.id),
+                    onTap: () => setState(() {
+                      if (isSelected) {
+                        _selectedIds.remove(p.id!);
+                      } else {
+                        _selectedIds.add(p.id!);
+                      }
+                    }),
                     dense: true,
                   );
                 },
@@ -927,6 +1081,12 @@ class _ProjectPickerDialog extends StatelessWidget {
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('取消')),
+        TextButton(
+          onPressed: _selectedIds.isEmpty
+              ? null
+              : () => Navigator.pop(context, Set.from(_selectedIds)),
+          child: const Text('确定'),
+        ),
       ],
     );
   }

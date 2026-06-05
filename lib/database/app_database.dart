@@ -742,7 +742,81 @@ class AppDatabase {
       WHERE (e.title LIKE ? OR e.content LIKE ? OR t.name LIKE ? OR at.name LIKE ?)
       $spaceFilter
       ORDER BY e.created_at DESC
-    ''', [...args, like, like]);
+    ''', args);
+    final entries = maps.map((map) => Entry.fromMap(map)).toList();
+    await _enrichEntries(entries);
+    return entries;
+  }
+
+  /// 组合筛选查询（支持多选标签/项目/属性标签 + 日期范围 + 关键词，AND 组合）
+  Future<List<Entry>> getEntriesByFilters({
+    int? spaceId,
+    Set<int>? tagIds,
+    Set<int>? attributeTagIds,
+    Set<int>? projectIds,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? keyword,
+  }) async {
+    final db = await database;
+    final conditions = <String>[];
+    final args = <Object?>[];
+
+    if (spaceId != null) {
+      conditions.add('e.space_id = ?');
+      args.add(spaceId);
+    }
+
+    if (startDate != null && endDate != null) {
+      conditions.add('e.created_at >= ? AND e.created_at <= ?');
+      args.addAll([startDate.toIso8601String(), endDate.toIso8601String()]);
+    }
+
+    if (keyword != null && keyword.isNotEmpty) {
+      final like = '%$keyword%';
+      conditions.add(
+          '(e.title LIKE ? OR e.content LIKE ? OR t.name LIKE ? OR at.name LIKE ?)');
+      args.addAll([like, like, like, like]);
+    }
+
+    // 树状标签：OR 逻辑（满足任一即可）
+    if (tagIds != null && tagIds.isNotEmpty) {
+      final ph = tagIds.map((_) => '?').join(',');
+      conditions.add(
+          'EXISTS (SELECT 1 FROM entry_tags et2 WHERE et2.entry_id = e.id AND et2.tag_id IN ($ph))');
+      args.addAll(tagIds.map((id) => id).toList());
+    }
+
+    // 属性标签：OR 逻辑（满足任一即可）
+    if (attributeTagIds != null && attributeTagIds.isNotEmpty) {
+      final ph = attributeTagIds.map((_) => '?').join(',');
+      conditions.add(
+          'EXISTS (SELECT 1 FROM entry_attribute_tags eat2 WHERE eat2.entry_id = e.id AND eat2.attribute_tag_id IN ($ph))');
+      args.addAll(attributeTagIds.map((id) => id).toList());
+    }
+
+    // 项目：OR 逻辑（满足任一即可）
+    if (projectIds != null && projectIds.isNotEmpty) {
+      final ph = projectIds.map((_) => '?').join(',');
+      conditions.add('e.project_id IN ($ph)');
+      args.addAll(projectIds.map((id) => id).toList());
+    }
+
+    final whereClause =
+        conditions.isNotEmpty ? conditions.join(' AND ') : '1=1';
+
+    final maps = await db.rawQuery('''
+      SELECT DISTINCT e.*, p.name as project_name
+      FROM entries e
+      LEFT JOIN projects p ON e.project_id = p.id
+      LEFT JOIN entry_tags et ON e.id = et.entry_id
+      LEFT JOIN tags t ON et.tag_id = t.id
+      LEFT JOIN entry_attribute_tags eat ON e.id = eat.entry_id
+      LEFT JOIN attribute_tags at ON eat.attribute_tag_id = at.id
+      WHERE $whereClause
+      ORDER BY e.created_at DESC
+    ''', args);
+
     final entries = maps.map((map) => Entry.fromMap(map)).toList();
     await _enrichEntries(entries);
     return entries;

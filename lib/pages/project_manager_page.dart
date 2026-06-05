@@ -4,7 +4,7 @@ import '../models/project_group.dart';
 import '../database/app_database.dart';
 
 /// 项目管理页面
-/// 支持分组分层管理（项目本身无层级，通过分组归类）
+/// 支持分组分层管理，分组可收起展开，支持批量操作
 class ProjectManagerPage extends StatefulWidget {
   final int spaceId;
 
@@ -18,6 +18,12 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   final AppDatabase _db = AppDatabase();
   List<Project> _projects = [];
   List<ProjectGroup> _groups = [];
+
+  // 分组展开状态
+  final Set<int> _expandedGroupIds = {};
+  // 选择模式
+  bool _selectMode = false;
+  final Set<int> _selectedIds = {};
 
   int get _spaceId => widget.spaceId;
 
@@ -36,8 +42,68 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   List<Project> _getProjectsByGroup(int? groupId) =>
       _projects.where((p) => p.groupId == groupId).toList();
 
-  // ===== 分组操作 =====
+  void _toggleSelectMode() {
+    setState(() {
+      _selectMode = !_selectMode;
+      if (!_selectMode) _selectedIds.clear();
+    });
+  }
 
+  void _toggleSelect(int id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _batchDelete() async {
+    if (_selectedIds.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('确定要删除选中的 ${_selectedIds.length} 个项目吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除',
+                style:
+                    TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      for (final id in _selectedIds) {
+        await _db.deleteProject(id);
+      }
+      _selectedIds.clear();
+      _loadData();
+    }
+  }
+
+  Future<void> _batchMoveToGroup() async {
+    if (_selectedIds.isEmpty) return;
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => _PickProjectGroupBatchDialog(groups: _groups),
+    );
+    if (result == null) return;
+    final groupId = result == -1 ? null : result;
+    for (final id in _selectedIds) {
+      await _db.moveProjectToGroup(id, groupId);
+    }
+    _selectedIds.clear();
+    _loadData();
+  }
+
+  // ===== 分组操作 =====
   Future<void> _addGroup() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -127,7 +193,6 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   }
 
   // ===== 项目操作 =====
-
   Future<void> _addProject({int? groupId}) async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -190,16 +255,14 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
     }
   }
 
-  Future<void> _moveProjectToGroup(Project p) async {
+  /// 移动项目到分组（弹窗选择目标分组）
+  Future<void> _showMoveDialog(Project p) async {
     final result = await showDialog<int?>(
       context: context,
-      builder: (ctx) => _PickProjectGroupDialog(
-        groups: _groups,
-        currentGroupId: p.groupId,
-      ),
+      builder: (ctx) => _PickProjectGroupBatchDialog(groups: _groups),
     );
-    if (result != p.groupId) {
-      await _db.moveProjectToGroup(p.id!, result);
+    if (result != null) {
+      await _db.moveProjectToGroup(p.id!, result == -1 ? null : result);
       _loadData();
     }
   }
@@ -237,18 +300,44 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('项目管理'),
+        title: Text(_selectMode ? '已选 ${_selectedIds.length}' : '项目管理'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.folder_outlined),
-            tooltip: '新建分组',
-            onPressed: _addGroup,
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '新建项目',
-            onPressed: () => _addProject(),
-          ),
+          if (_selectMode) ...[
+            IconButton(
+              icon: const Icon(Icons.drive_file_move_outlined),
+              tooltip: '移动到分组',
+              onPressed:
+                  _selectedIds.isNotEmpty ? _batchMoveToGroup : null,
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_outline,
+                  color: theme.colorScheme.error),
+              tooltip: '批量删除',
+              onPressed:
+                  _selectedIds.isNotEmpty ? _batchDelete : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: '取消选择',
+              onPressed: _toggleSelectMode,
+            ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.checklist),
+              tooltip: '选择',
+              onPressed: _toggleSelectMode,
+            ),
+            IconButton(
+              icon: const Icon(Icons.folder_outlined),
+              tooltip: '新建分组',
+              onPressed: _addGroup,
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: '新建项目',
+              onPressed: () => _addProject(),
+            ),
+          ],
         ],
       ),
       body: _projects.isEmpty && _groups.isEmpty
@@ -269,68 +358,29 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
           : ListView(
               padding: const EdgeInsets.all(12),
               children: [
-                ..._groups.map((g) {
-                  final projects = _getProjectsByGroup(g.id);
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-                          child: Row(
-                            children: [
-                              Icon(Icons.folder,
-                                  size: 18, color: theme.colorScheme.primary),
-                              const SizedBox(width: 6),
-                              Text(g.name,
-                                  style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600)),
-                              const Spacer(),
-                              IconButton(
-                                icon: const Icon(Icons.add, size: 18),
-                                tooltip: '在此分组新建项目',
-                                onPressed: () => _addProject(groupId: g.id),
-                              ),
-                              PopupMenuButton<String>(
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                      value: 'rename',
-                                      child: Text('重命名分组')),
-                                  const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Text('删除分组',
-                                          style:
-                                              TextStyle(color: Colors.red))),
-                                ],
-                                onSelected: (v) {
-                                  switch (v) {
-                                    case 'rename':
-                                      _renameGroup(g);
-                                      break;
-                                    case 'delete':
-                                      _deleteGroup(g);
-                                      break;
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (projects.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                            child: Text('（空）',
-                                style: TextStyle(
-                                    fontSize: 13, color: Colors.grey)),
-                          )
-                        else
-                          ...projects.map((p) => _buildProjectTile(p, theme)),
-                      ],
-                    ),
-                  );
-                }),
+                ..._groups.map((g) => _ProjectGroupSection(
+                      group: g,
+                      projects: _getProjectsByGroup(g.id),
+                      allGroups: _groups,
+                      isExpanded: _expandedGroupIds.contains(g.id),
+                      selectMode: _selectMode,
+                      selectedIds: _selectedIds,
+                      theme: theme,
+                      onToggleExpand: () => setState(() {
+                        if (_expandedGroupIds.contains(g.id!)) {
+                          _expandedGroupIds.remove(g.id!);
+                        } else {
+                          _expandedGroupIds.add(g.id!);
+                        }
+                      }),
+                      onToggleSelect: _toggleSelect,
+                      onAddProject: () => _addProject(groupId: g.id),
+                      onRenameGroup: () => _renameGroup(g),
+                      onDeleteGroup: () => _deleteGroup(g),
+                      onRenameProject: _renameProject,
+                      onDeleteProject: _deleteProject,
+                      onMoveProject: (p) => _showMoveDialog(p),
+                    )),
 
                 // 未分组项目
                 if (ungrouped.isNotEmpty) ...[
@@ -354,65 +404,225 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   Widget _buildProjectTile(Project p, ThemeData theme) {
     return ListTile(
       dense: true,
-      leading: Icon(Icons.folder_outlined, color: theme.colorScheme.primary),
+      leading: _selectMode
+          ? Checkbox(
+              value: _selectedIds.contains(p.id),
+              onChanged: (_) => _toggleSelect(p.id!),
+            )
+          : Icon(Icons.folder_outlined,
+              size: 18, color: theme.colorScheme.primary),
       title: Text(p.name, style: const TextStyle(fontSize: 14)),
-      trailing: PopupMenuButton<String>(
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'edit', child: Text('重命名')),
-          if (_groups.isNotEmpty)
-            const PopupMenuItem(value: 'move', child: Text('移动到分组')),
-          const PopupMenuItem(
-            value: 'delete',
-            child: Text('删除', style: TextStyle(color: Colors.red)),
+      trailing: _selectMode
+          ? null
+          : PopupMenuButton<String>(
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('重命名')),
+                if (_groups.isNotEmpty)
+                  const PopupMenuItem(
+                      value: 'move', child: Text('移动到分组')),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('删除', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+              onSelected: (v) {
+                switch (v) {
+                  case 'edit':
+                    _renameProject(p);
+                    break;
+                  case 'move':
+                    _showMoveDialog(p);
+                    break;
+                  case 'delete':
+                    _deleteProject(p);
+                    break;
+                }
+              },
+            ),
+      onTap: _selectMode ? () => _toggleSelect(p.id!) : null,
+    );
+  }
+}
+
+/// 项目分组区块（可收起展开）
+class _ProjectGroupSection extends StatelessWidget {
+  final ProjectGroup group;
+  final List<Project> projects;
+  final List<ProjectGroup> allGroups;
+  final bool isExpanded;
+  final bool selectMode;
+  final Set<int> selectedIds;
+  final ThemeData theme;
+  final VoidCallback onToggleExpand;
+  final Function(int) onToggleSelect;
+  final VoidCallback onAddProject;
+  final VoidCallback onRenameGroup;
+  final VoidCallback onDeleteGroup;
+  final Function(Project) onRenameProject;
+  final Function(Project) onDeleteProject;
+  final Function(Project) onMoveProject;
+
+  const _ProjectGroupSection({
+    required this.group,
+    required this.projects,
+    required this.allGroups,
+    required this.isExpanded,
+    required this.selectMode,
+    required this.selectedIds,
+    required this.theme,
+    required this.onToggleExpand,
+    required this.onToggleSelect,
+    required this.onAddProject,
+    required this.onRenameGroup,
+    required this.onDeleteGroup,
+    required this.onRenameProject,
+    required this.onDeleteProject,
+    required this.onMoveProject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: onToggleExpand,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Icon(
+                    isExpanded ? Icons.expand_more : Icons.chevron_right,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.folder,
+                      size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Text(group.name,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  if (!selectMode) ...[
+                    Text('${projects.length}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant)),
+                    IconButton(
+                      icon: const Icon(Icons.add, size: 18),
+                      tooltip: '在此分组新建项目',
+                      onPressed: onAddProject,
+                    ),
+                    PopupMenuButton<String>(
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                            value: 'rename', child: Text('重命名分组')),
+                        const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('删除分组',
+                                style: TextStyle(color: Colors.red))),
+                      ],
+                      onSelected: (v) {
+                        switch (v) {
+                          case 'rename':
+                            onRenameGroup();
+                            break;
+                          case 'delete':
+                            onDeleteGroup();
+                            break;
+                        }
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
+          if (isExpanded)
+            if (projects.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Text('（空）',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+              )
+            else
+              ...projects.map((p) => ListTile(
+                    dense: true,
+                    leading: selectMode
+                        ? Checkbox(
+                            value: selectedIds.contains(p.id),
+                            onChanged: (_) => onToggleSelect(p.id!),
+                          )
+                        : Icon(Icons.folder_outlined,
+                            size: 18, color: theme.colorScheme.primary),
+                    title: Text(p.name, style: const TextStyle(fontSize: 14)),
+                    trailing: selectMode
+                        ? null
+                        : PopupMenuButton<String>(
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                  value: 'edit', child: Text('重命名')),
+                              if (allGroups.isNotEmpty)
+                                const PopupMenuItem(
+                                    value: 'move',
+                                    child: Text('移动到分组')),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Text('删除',
+                                    style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                            onSelected: (v) {
+                              switch (v) {
+                                case 'edit':
+                                  onRenameProject(p);
+                                  break;
+                                case 'move':
+                                  onMoveProject(p);
+                                  break;
+                                case 'delete':
+                                  onDeleteProject(p);
+                                  break;
+                              }
+                            },
+                          ),
+                    onTap:
+                        selectMode ? () => onToggleSelect(p.id!) : null,
+                  )),
         ],
-        onSelected: (v) {
-          switch (v) {
-            case 'edit':
-              _renameProject(p);
-              break;
-            case 'move':
-              _moveProjectToGroup(p);
-              break;
-            case 'delete':
-              _deleteProject(p);
-              break;
-          }
-        },
       ),
     );
   }
 }
 
-/// 选择项目分组弹窗
-class _PickProjectGroupDialog extends StatelessWidget {
+/// 批量选择分组弹窗
+class _PickProjectGroupBatchDialog extends StatelessWidget {
   final List<ProjectGroup> groups;
-  final int? currentGroupId;
 
-  const _PickProjectGroupDialog({
-    required this.groups,
-    required this.currentGroupId,
-  });
+  const _PickProjectGroupBatchDialog({required this.groups});
 
   @override
   Widget build(BuildContext context) {
-    int? selected = currentGroupId;
+    int? selected;
     return StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: const Text('移动到分组'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<int?>(
+            RadioListTile<int>(
               title: const Text('（不分组）'),
-              value: null,
+              value: -1,
               groupValue: selected,
               onChanged: (v) => setState(() => selected = v),
               dense: true,
             ),
-            ...groups.map((g) => RadioListTile<int?>(
+            ...groups.map((g) => RadioListTile<int>(
                   title: Text(g.name),
-                  value: g.id,
+                  value: g.id!,
                   groupValue: selected,
                   onChanged: (v) => setState(() => selected = v),
                   dense: true,
@@ -421,11 +631,12 @@ class _PickProjectGroupDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.pop(context, selected),
+            onPressed: selected != null
+                ? () => Navigator.pop(context, selected)
+                : null,
             child: const Text('确定'),
           ),
         ],

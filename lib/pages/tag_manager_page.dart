@@ -31,7 +31,8 @@ class _TagManagerPageState extends State<TagManagerPage> {
   }
 
   List<Tag> _getRootTags() =>
-      _allTags.where((t) => t.parentId == null).toList();
+      _allTags.where((t) => t.parentId == null).toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
   List<Tag> _getChildren(int parentId) =>
       _allTags.where((t) => t.parentId == parentId).toList()
@@ -62,7 +63,6 @@ class _TagManagerPageState extends State<TagManagerPage> {
         ],
       ),
     );
-
     if (result != null && result.isNotEmpty) {
       await _db.createTag(result, parentId: parentId, spaceId: _spaceId);
       _loadTags();
@@ -94,16 +94,13 @@ class _TagManagerPageState extends State<TagManagerPage> {
         ],
       ),
     );
-
     if (result != null && result.isNotEmpty && result != tag.name) {
       await _db.updateTagName(tag.id!, result);
       _loadTags();
     }
   }
 
-  /// 移动标签到新父节点（层级调整）
   Future<void> _moveTag(Tag tag) async {
-    // 获取可能的父节点列表（排除自身及其子节点）
     final excludeIds = _getDescendantIds(tag.id!)..add(tag.id!);
     final candidates =
         _allTags.where((t) => !excludeIds.contains(t.id)).toList();
@@ -116,27 +113,21 @@ class _TagManagerPageState extends State<TagManagerPage> {
         currentParentId: tag.parentId,
       ),
     );
-    if (selectedId is int) {
-      // selectedId == -1 means "move to root"
-      // ignore: prefer_null_aware_operators
-    }
     int? newParentId;
     if (selectedId == -1) {
-      newParentId = null; // 移到根
+      newParentId = null;
     } else if (selectedId != null && selectedId != tag.parentId) {
       newParentId = selectedId;
     } else {
-      return; // 未变更
+      return;
     }
-
     await _db.moveTag(tag.id!, newParentId);
     _loadTags();
   }
 
   Set<int> _getDescendantIds(int tagId) {
     final ids = <int>{};
-    final children = _getChildren(tagId);
-    for (final child in children) {
+    for (final child in _getChildren(tagId)) {
       ids.add(child.id!);
       ids.addAll(_getDescendantIds(child.id!));
     }
@@ -162,15 +153,16 @@ class _TagManagerPageState extends State<TagManagerPage> {
         ],
       ),
     );
-
     if (confirm == true) {
       await _db.deleteTag(tag.id!);
       _loadTags();
     }
   }
 
-  /// 拖拽排序完成后重新编号
-  Future<void> _reorderSiblings(List<Tag> siblings, int oldIndex, int newIndex) async {
+  /// 拖拽排序：重新编号同级标签
+  Future<void> _reorderChildrenOf(int parentId,
+      int oldIndex, int newIndex) async {
+    final siblings = _getChildren(parentId);
     if (oldIndex < newIndex) newIndex--;
     final updated = List<Tag>.from(siblings);
     final item = updated.removeAt(oldIndex);
@@ -180,7 +172,6 @@ class _TagManagerPageState extends State<TagManagerPage> {
         await _db.updateTagSortOrder(updated[i].id!, i);
       }
     }
-    // Also update the moved item if its sortOrder differs
     if (item.sortOrder != newIndex) {
       await _db.updateTagSortOrder(item.id!, newIndex);
     }
@@ -217,143 +208,61 @@ class _TagManagerPageState extends State<TagManagerPage> {
                 ],
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: rootTags.length,
-              itemBuilder: (context, index) {
-                return _TagTreeNode(
-                  tag: rootTags[index],
-                  allTags: _allTags,
-                  getChildren: _getChildren,
-                  onChanged: _loadTags,
-                  onEdit: _editTag,
-                  onDelete: _deleteTag,
-                  onMove: _moveTag,
-                  onAddChild: (int parentId) => _addTag(parentId: parentId),
-                  onReorder: _reorderSiblings,
-                  level: 0,
-                );
-              },
+          : _ReorderableTagList(
+              tags: rootTags,
+              parentId: null,
+              allTags: _allTags,
+              getChildren: _getChildren,
+              level: 0,
+              onAddChild: (parentId) => _addTag(parentId: parentId),
+              onEdit: _editTag,
+              onMove: _moveTag,
+              onDelete: _deleteTag,
+              onReorder: _reorderChildrenOf,
+              onChanged: _loadTags,
             ),
     );
   }
 }
 
-/// 树状标签节点（支持拖拽排序、移动父节点）
-class _TagTreeNode extends StatelessWidget {
-  final Tag tag;
+/// 可拖拽排序的标签列表（会递归显示子标签）
+class _ReorderableTagList extends StatefulWidget {
+  final List<Tag> tags;
+  final int? parentId;
   final List<Tag> allTags;
   final List<Tag> Function(int parentId) getChildren;
-  final VoidCallback onChanged;
-  final Function(Tag) onEdit;
-  final Function(Tag) onDelete;
-  final Function(Tag) onMove;
-  final void Function(int parentId) onAddChild;
-  final void Function(List<Tag> children, int oldIndex, int newIndex) onReorder;
   final int level;
-
-  const _TagTreeNode({
-    required this.tag,
-    required this.allTags,
-    required this.getChildren,
-    required this.onChanged,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onMove,
-    required this.onAddChild,
-    required this.onReorder,
-    required this.level,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final children = getChildren(tag.id!);
-    final hasChildren = children.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(left: level * 24.0),
-          child: Card(
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            child: ListTile(
-              dense: true,
-              leading: hasChildren
-                  ? const Icon(Icons.folder, size: 20)
-                  : const Icon(Icons.label_outline, size: 20),
-              title: Text(tag.name, style: const TextStyle(fontSize: 15)),
-              trailing: PopupMenuButton<String>(
-                itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'add', child: Text('添加子标签')),
-                  const PopupMenuItem(value: 'edit', child: Text('重命名')),
-                  const PopupMenuItem(value: 'move', child: Text('移动层级')),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child:
-                        Text('删除', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
-                onSelected: (value) {
-                  switch (value) {
-                    case 'add':
-                      onAddChild(tag.id!);
-                      break;
-                    case 'edit':
-                      onEdit(tag);
-                      break;
-                    case 'move':
-                      onMove(tag);
-                      break;
-                    case 'delete':
-                      onDelete(tag);
-                      break;
-                  }
-                },
-              ),
-            ),
-          ),
-        ),
-        if (hasChildren)
-          _ReorderableTagList(
-            tags: children,
-            getChildren: getChildren,
-            onChanged: onChanged,
-            onEdit: onEdit,
-            onDelete: onDelete,
-            onMove: onMove,
-            onAddChild: onAddChild,
-            onReorder: onReorder,
-            level: level + 1,
-          ),
-      ],
-    );
-  }
-}
-
-/// 可拖拽排序的标签列表
-class _ReorderableTagList extends StatelessWidget {
-  final List<Tag> tags;
-  final List<Tag> Function(int parentId) getChildren;
-  final VoidCallback onChanged;
-  final Function(Tag) onEdit;
-  final Function(Tag) onDelete;
-  final Function(Tag) onMove;
   final void Function(int parentId) onAddChild;
-  final void Function(List<Tag> children, int oldIndex, int newIndex) onReorder;
-  final int level;
+  final Function(Tag) onEdit;
+  final Function(Tag) onMove;
+  final Function(Tag) onDelete;
+  final void Function(int parentId, int oldIndex, int newIndex) onReorder;
+  final VoidCallback onChanged;
 
   const _ReorderableTagList({
     required this.tags,
+    required this.parentId,
+    required this.allTags,
     required this.getChildren,
-    required this.onChanged,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onMove,
-    required this.onAddChild,
-    required this.onReorder,
     required this.level,
+    required this.onAddChild,
+    required this.onEdit,
+    required this.onMove,
+    required this.onDelete,
+    required this.onReorder,
+    required this.onChanged,
   });
+
+  @override
+  State<_ReorderableTagList> createState() => _ReorderableTagListState();
+}
+
+class _ReorderableTagListState extends State<_ReorderableTagList> {
+  // 展开状态 key = tag id
+  final Set<int> _expandedIds = {};
+
+  bool _isExpanded(Tag tag) => _expandedIds.contains(tag.id);
+  bool _hasChildren(Tag tag) => widget.getChildren(tag.id!).isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -361,63 +270,116 @@ class _ReorderableTagList extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
-      itemCount: tags.length,
+      itemCount: widget.tags.length,
       onReorder: (oldIndex, newIndex) =>
-          onReorder(tags, oldIndex, newIndex),
-      proxyDecorator: (child, index, animation) {
-        return Material(
-          elevation: 2,
-          borderRadius: BorderRadius.circular(8),
-          child: child,
-        );
-      },
+          widget.onReorder(widget.parentId ?? 0, oldIndex, newIndex),
+      proxyDecorator: (child, index, animation) => Material(
+        elevation: 2,
+        borderRadius: BorderRadius.circular(8),
+        child: child,
+      ),
       itemBuilder: (context, index) {
-        final child = tags[index];
-        return Padding(
-          key: ValueKey(child.id),
-          padding: EdgeInsets.only(left: level * 24.0),
-          child: Card(
-            margin: const EdgeInsets.symmetric(vertical: 1),
-            child: ListTile(
-              dense: true,
-              leading: ReorderableDragStartListener(
-                index: index,
-                child: const Icon(Icons.drag_handle, size: 20),
-              ),
-              title: Text(child.name, style: const TextStyle(fontSize: 14)),
-              trailing: PopupMenuButton<String>(
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                      value: 'add', child: Text('添加子标签')),
-                  const PopupMenuItem(
-                      value: 'edit', child: Text('重命名')),
-                  const PopupMenuItem(
-                      value: 'move', child: Text('移动层级')),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('删除',
-                        style: TextStyle(color: Colors.red)),
+        final tag = widget.tags[index];
+        final hasChildren = _hasChildren(tag);
+        final isExpanded = _isExpanded(tag);
+        final children = widget.getChildren(tag.id!);
+
+        return Column(
+          key: ValueKey(tag.id),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(left: widget.level * 24.0),
+              child: Card(
+                margin: const EdgeInsets.symmetric(vertical: 1),
+                child: ListTile(
+                  dense: true,
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle, size: 20),
+                      ),
+                      if (hasChildren)
+                        IconButton(
+                          icon: Icon(
+                            isExpanded
+                                ? Icons.expand_more
+                                : Icons.chevron_right,
+                            size: 18,
+                          ),
+                          onPressed: () => setState(() {
+                            if (isExpanded) {
+                              _expandedIds.remove(tag.id!);
+                            } else {
+                              _expandedIds.add(tag.id!);
+                            }
+                          }),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 24, minHeight: 24),
+                        )
+                      else
+                        const SizedBox(width: 24),
+                    ],
                   ),
-                ],
-                onSelected: (v) {
-                  switch (v) {
-                    case 'add':
-                      onAddChild(child.id!);
-                      break;
-                    case 'edit':
-                      onEdit(child);
-                      break;
-                    case 'move':
-                      onMove(child);
-                      break;
-                    case 'delete':
-                      onDelete(child);
-                      break;
-                  }
-                },
+                  title: Text(tag.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight:
+                            hasChildren ? FontWeight.w600 : FontWeight.normal,
+                      )),
+                  trailing: PopupMenuButton<String>(
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                          value: 'add', child: Text('添加子标签')),
+                      const PopupMenuItem(
+                          value: 'edit', child: Text('重命名')),
+                      const PopupMenuItem(
+                          value: 'move', child: Text('移动层级')),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('删除',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                    onSelected: (v) {
+                      switch (v) {
+                        case 'add':
+                          widget.onAddChild(tag.id!);
+                          break;
+                        case 'edit':
+                          widget.onEdit(tag);
+                          break;
+                        case 'move':
+                          widget.onMove(tag);
+                          break;
+                        case 'delete':
+                          widget.onDelete(tag);
+                          break;
+                      }
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
+            // 展开显示子标签（递归）
+            if (isExpanded && hasChildren)
+              _ReorderableTagList(
+                tags: children,
+                parentId: tag.id,
+                allTags: widget.allTags,
+                getChildren: widget.getChildren,
+                level: widget.level + 1,
+                onAddChild: widget.onAddChild,
+                onEdit: widget.onEdit,
+                onMove: widget.onMove,
+                onDelete: widget.onDelete,
+                onReorder: widget.onReorder,
+                onChanged: widget.onChanged,
+              ),
+          ],
         );
       },
     );
@@ -471,8 +433,7 @@ class _MoveTagDialogState extends State<_MoveTagDialog> {
               onChanged: (v) => setState(() => _selectedId = v),
               dense: true,
             ),
-            ..._rootCandidates.map((c) =>
-                _buildCandidateNode(c, 0)),
+            ..._rootCandidates.map((c) => _buildCandidateNode(c, 0)),
           ],
         ),
       ),

@@ -66,6 +66,36 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
     }
   }
 
+  Future<void> _renameSpace(Space space) async {
+    final controller = TextEditingController(text: space.name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名入口'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '入口名称',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty && result != space.name) {
+      await _db.updateSpaceName(space.id!, result);
+      _loadSpaces();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -126,8 +156,27 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
                         ),
                         title: Text(space.name,
                             style: const TextStyle(fontSize: 17)),
-                        trailing:
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                    value: 'rename',
+                                    child: Text('重命名')),
+                              ],
+                              onSelected: (v) async {
+                                if (v == 'rename') {
+                                  await _renameSpace(space);
+                                }
+                              },
+                            ),
                             const Icon(Icons.chevron_right),
+                          ],
+                        ),
                         onTap: () => widget.onSpaceSelected(space.id!),
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 4),

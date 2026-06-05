@@ -17,6 +17,9 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   final AppDatabase _db = AppDatabase();
   bool _exporting = false;
   bool _importing = false;
+  final _pathController = TextEditingController();
+  String _scanPath = '';
+  int _scanKey = 0; // 用于强制刷新 FutureBuilder
 
   Future<void> _export() async {
     setState(() => _exporting = true);
@@ -101,13 +104,45 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   }
 
   Future<List<FileSystemEntity>> _scanBackupFiles() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = _scanPath.isNotEmpty
+        ? Directory(_scanPath)
+        : await getApplicationDocumentsDirectory();
+    if (!dir.existsSync()) return [];
     final files = dir.listSync();
     return files
         .where((f) => f is File && f.path.endsWith('.json'))
         .toList()
       ..sort(
           (a, b) => -a.statSync().modified.compareTo(b.statSync().modified));
+  }
+
+  Future<void> _initDefaultPath() async {
+    if (_scanPath.isEmpty) {
+      final dir = await getApplicationDocumentsDirectory();
+      _scanPath = dir.path;
+      _pathController.text = _scanPath;
+    }
+  }
+
+  Future<void> _rescan() {
+    final path = _pathController.text.trim();
+    setState(() {
+      _scanPath = path;
+      _scanKey++;
+    });
+    return Future.value();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initDefaultPath();
+  }
+
+  @override
+  void dispose() {
+    _pathController.dispose();
+    super.dispose();
   }
 
   @override
@@ -190,6 +225,36 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                         color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 16),
+
+                  // ---- 自定义扫描路径 ----
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _pathController,
+                          decoration: InputDecoration(
+                            hintText: '备份文件目录路径',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            isDense: true,
+                            labelStyle: const TextStyle(fontSize: 13),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 20),
+                        tooltip: '扫描此路径',
+                        onPressed: _rescan,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
                   if (_importing)
                     const Center(
                         child: Padding(
@@ -198,6 +263,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     ))
                   else
                     FutureBuilder<List<FileSystemEntity>>(
+                      key: ValueKey('scan_$_scanKey'),
                       future: _scanBackupFiles(),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
