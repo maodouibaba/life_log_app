@@ -204,6 +204,78 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     }
   }
 
+  /// 弹出事项简介输入框
+  Future<void> _openTitleDialog() async {
+    final controller = TextEditingController(text: _titleController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('事项简介'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 1,
+          decoration: const InputDecoration(
+            hintText: '如：今天的工作总结',
+            border: OutlineInputBorder(),
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) {
+      setState(() => _titleController.text = result);
+    }
+  }
+
+  /// 弹出详细情况输入框
+  Future<void> _openContentDialog() async {
+    final controller = TextEditingController(text: _contentController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('详细情况'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 8,
+            minLines: 3,
+            decoration: const InputDecoration(
+              hintText: '详细情况...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) {
+      setState(() => _contentController.text = result);
+    }
+  }
+
   Future<void> _save() async {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
@@ -370,40 +442,76 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   List<Widget> _buildFormSections(ThemeData theme) {
     final path = _selectedTagPath;
     return [
-      // ---- 事项简介 ----
-      TextField(
-        controller: _titleController,
-        autofocus: !_isEditMode,
-        maxLines: 1,
-        decoration: InputDecoration(
-          hintText: '事项简介（如：今天的工作总结）',
-          border: OutlineInputBorder(
+      // ---- 事项简介（点按弹出输入框） ----
+      InkWell(
+        onTap: _openTitleDialog,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          filled: true,
-          fillColor:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.short_text,
+                  size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _titleController.text.isNotEmpty
+                    ? Text(_titleController.text,
+                        style: const TextStyle(fontSize: 15))
+                    : Text('点击输入事项简介',
+                        style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 15)),
+              ),
+              Icon(Icons.edit_outlined,
+                  size: 16, color: theme.colorScheme.onSurfaceVariant),
+            ],
+          ),
         ),
-        textInputAction: TextInputAction.next,
       ),
 
       const SizedBox(height: 12),
 
-      // ---- 详细情况 ----
-      TextField(
-        controller: _contentController,
-        maxLines: 6,
-        minLines: 3,
-        decoration: InputDecoration(
-          hintText: '详细情况...',
-          border: OutlineInputBorder(
+      // ---- 详细情况（点按弹出输入框） ----
+      InkWell(
+        onTap: _openContentDialog,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          filled: true,
-          fillColor:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.subject,
+                  size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _contentController.text.isNotEmpty
+                    ? Text(_contentController.text,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 15))
+                    : Text('点击输入详细情况',
+                        style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 15)),
+              ),
+              Icon(Icons.edit_outlined,
+                  size: 16, color: theme.colorScheme.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
 
