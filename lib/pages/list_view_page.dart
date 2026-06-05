@@ -702,44 +702,11 @@ class _ListViewPageState extends State<ListViewPage> {
                   onTap: _selectMode ? null : _pickProject,
                 ),
                 const Spacer(),
-                // 分组方式切换
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.view_headline, size: 20),
-                  tooltip: '分组方式',
+                // 分组方式切换 — 突出显示
+                _GroupByButton(
+                  currentGroupBy: _groupBy,
                   onSelected: (v) => setState(() => _groupBy = v),
-                  itemBuilder: (context) => [
-                    CheckedPopupMenuItem(
-                      value: 'date',
-                      checked: _groupBy == 'date',
-                      child: const Text('按日期'),
-                    ),
-                    CheckedPopupMenuItem(
-                      value: 'project',
-                      checked: _groupBy == 'project',
-                      child: const Text('按项目'),
-                    ),
-                    CheckedPopupMenuItem(
-                      value: 'tag',
-                      checked: _groupBy == 'tag',
-                      child: const Text('按树状标签'),
-                    ),
-                    CheckedPopupMenuItem(
-                      value: 'attribute_tag',
-                      checked: _groupBy == 'attribute_tag',
-                      child: const Text('按属性标签'),
-                    ),
-                    CheckedPopupMenuItem(
-                      value: 'none',
-                      checked: _groupBy == 'none',
-                      child: const Text('不分组'),
-                    ),
-                  ],
-                ),
-                Text(
-                  ' ${_entries.length}',
-                  style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontSize: 13),
+                  count: _entries.length,
                 ),
               ],
             ),
@@ -809,7 +776,116 @@ class _ListViewPageState extends State<ListViewPage> {
 
 // ==================== 组件 ====================
 
-class _GroupSection extends StatelessWidget {
+/// 分组方式切换按钮 — 突出显示当前分组
+class _GroupByButton extends StatelessWidget {
+  final String currentGroupBy;
+  final ValueChanged<String> onSelected;
+  final int count;
+
+  const _GroupByButton({
+    required this.currentGroupBy,
+    required this.onSelected,
+    required this.count,
+  });
+
+  String get _label {
+    switch (currentGroupBy) {
+      case 'project': return '按项目';
+      case 'tag': return '按标签';
+      case 'attribute_tag': return '按属性';
+      case 'none': return '不分组';
+      default: return '按日期';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PopupMenuButton<String>(
+          onSelected: onSelected,
+          offset: const Offset(0, 40),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.view_headline, size: 16,
+                    color: theme.colorScheme.onSecondaryContainer),
+                const SizedBox(width: 4),
+                Text(
+                  _label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down, size: 18,
+                    color: theme.colorScheme.onSecondaryContainer),
+              ],
+            ),
+          ),
+          itemBuilder: (context) => [
+            _buildItem(value: 'date', label: '按日期', icon: Icons.calendar_month),
+            _buildItem(value: 'project', label: '按项目', icon: Icons.folder_outlined),
+            _buildItem(value: 'tag', label: '按树状标签', icon: Icons.label_outline),
+            _buildItem(value: 'attribute_tag', label: '按属性标签', icon: Icons.turned_in_not_outlined),
+            _buildItem(value: 'none', label: '不分组', icon: Icons.clear_all),
+          ],
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$count',
+          style: TextStyle(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _buildItem({
+    required String value,
+    required String label,
+    required IconData icon,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 18,
+              color: currentGroupBy == value
+                  ? null
+                  : Colors.grey),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: currentGroupBy == value ? FontWeight.w600 : null,
+            ),
+          ),
+          if (currentGroupBy == value) ...[
+            const Spacer(),
+            Icon(Icons.check, size: 16, color: Colors.green),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupSection extends StatefulWidget {
   final String groupLabel;
   final List<Entry> entries;
   final bool selectMode;
@@ -831,27 +907,58 @@ class _GroupSection extends StatelessWidget {
   });
 
   @override
+  State<_GroupSection> createState() => _GroupSectionState();
+}
+
+class _GroupSectionState extends State<_GroupSection> {
+  bool _expanded = true;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (groupLabel.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
-            child: Text(groupLabel,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.primary)),
+        if (widget.groupLabel.isNotEmpty)
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2, left: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16,
+                    color: widget.theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(widget.groupLabel,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: widget.theme.colorScheme.primary)),
+                  const Spacer(),
+                  Text(
+                    '${widget.entries.length}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: widget.theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
           ),
-        ...entries.map((entry) {
-          final isSelected = selectedIds.contains(entry.id);
+        if (_expanded)
+          ...widget.entries.map((entry) {
+          final isSelected = widget.selectedIds.contains(entry.id);
 
-          if (selectMode) {
+          if (widget.selectMode) {
             return ListTile(
               leading: Checkbox(
                 value: isSelected,
-                onChanged: (_) => onToggle(entry.id!),
+                onChanged: (_) => widget.onToggle(entry.id!),
               ),
               title: Text(
                 entry.title ?? entry.content,
@@ -859,14 +966,14 @@ class _GroupSection extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                formatDateTime(entry.createdAt),
+                widget.formatDateTime(entry.createdAt),
                 style: TextStyle(
                     fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant),
+                    color: widget.theme.colorScheme.onSurfaceVariant),
               ),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-              onTap: () => onToggle(entry.id!),
+              onTap: () => widget.onToggle(entry.id!),
             );
           }
 
@@ -884,10 +991,10 @@ class _GroupSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  formatDateTime(entry.createdAt),
+                  widget.formatDateTime(entry.createdAt),
                   style: TextStyle(
                       fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant),
+                      color: widget.theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -900,15 +1007,15 @@ class _GroupSection extends StatelessWidget {
                               horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
                             color:
-                                theme.colorScheme.primaryContainer,
+                                widget.theme.colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             entry.projectName!,
                             style: TextStyle(
                               fontSize: 10,
-                              color: theme
-                                  .colorScheme.onPrimaryContainer,
+                              color: widget
+                                  .theme.colorScheme.onPrimaryContainer,
                             ),
                           ),
                         ),
@@ -924,7 +1031,7 @@ class _GroupSection extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 11,
                                       color:
-                                          theme.colorScheme.primary,
+                                          widget.theme.colorScheme.primary,
                                     ),
                                   ))
                               .toList(),
@@ -936,7 +1043,7 @@ class _GroupSection extends StatelessWidget {
             ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            onTap: () => onTapEntry(entry),
+            onTap: () => widget.onTapEntry(entry),
           );
         }),
       ],

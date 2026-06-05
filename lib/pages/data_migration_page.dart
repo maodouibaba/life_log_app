@@ -289,7 +289,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
                               color: theme.colorScheme.surfaceContainerHighest
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Column(

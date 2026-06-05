@@ -967,88 +967,133 @@ class AppDatabase {
 
   /// 导出为 JSON（指定空间或全部）
   Future<String> exportToJson({int? spaceId}) async {
-    final tags = spaceId != null
-        ? await getAllTags(spaceId: spaceId)
-        : await getAllTags();
-    final projects = spaceId != null
-        ? await getAllProjects(spaceId: spaceId)
-        : await getAllProjects();
-    final db = await database;
-
-    final whereClause = spaceId != null ? 'WHERE space_id = ?' : '';
-    final whereArgs = spaceId != null ? [spaceId] : null;
-
-    List<Map<String, dynamic>> entryMaps;
     try {
-      entryMaps = await db.query('entries',
-          where: whereClause, whereArgs: whereArgs, orderBy: 'id ASC');
-    } catch (e) {
-      debugPrint('导出失败：查询 entries 表出错 — $e');
-      rethrow;
-    }
-    final entryIds = entryMaps.map((m) => m['id'] as int).toList();
+      final tags = spaceId != null
+          ? await getAllTags(spaceId: spaceId)
+          : await getAllTags();
+      final projects = spaceId != null
+          ? await getAllProjects(spaceId: spaceId)
+          : await getAllProjects();
+      final db = await database;
 
-    List<Map<String, dynamic>> entryTagMaps = [];
-    List<Map<String, dynamic>> entryAttributeTagMaps = [];
+      final whereClause = spaceId != null ? 'WHERE space_id = ?' : '';
+      final whereArgs = spaceId != null ? [spaceId] : null;
 
-    if (entryIds.isNotEmpty) {
-      final ph = entryIds.map((_) => '?').join(',');
+      // 查询记录
+      List<Map<String, dynamic>> entryMaps;
       try {
-        entryTagMaps = await db.rawQuery(
-            'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-            entryIds);
+        entryMaps = await db.query('entries',
+            where: whereClause, whereArgs: whereArgs, orderBy: 'id ASC');
       } catch (e) {
-        debugPrint('导出失败：查询 entry_tags 表出错 — $e');
+        debugPrint('导出失败：查询 entries 表出错 — $e');
         rethrow;
       }
+      final entryIds = entryMaps.map((m) => m['id'] as int).toList();
+
+      // 查询关联表
+      List<Map<String, dynamic>> entryTagMaps = [];
+      List<Map<String, dynamic>> entryAttributeTagMaps = [];
+
+      if (entryIds.isNotEmpty) {
+        final ph = entryIds.map((_) => '?').join(',');
+        try {
+          entryTagMaps = await db.rawQuery(
+              'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+              entryIds);
+        } catch (e) {
+          debugPrint('导出失败：查询 entry_tags 表出错 — $e');
+          rethrow;
+        }
+        try {
+          entryAttributeTagMaps = await db.rawQuery(
+              'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+              entryIds);
+        } catch (e) {
+          debugPrint('导出失败：查询 entry_attribute_tags 表出错 — $e');
+          rethrow;
+        }
+      }
+
+      // 查询属性标签
+      List<Map<String, dynamic>> attributeTagMaps;
       try {
-        entryAttributeTagMaps = await db.rawQuery(
-            'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-            entryIds);
+        attributeTagMaps = spaceId != null
+            ? await db.query('attribute_tags', where: 'space_id = ?', whereArgs: [spaceId])
+            : await db.query('attribute_tags');
       } catch (e) {
-        debugPrint('导出失败：查询 entry_attribute_tags 表出错 — $e');
+        debugPrint('导出失败：查询 attribute_tags 表出错 — $e');
         rethrow;
       }
-    }
 
-    List<Map<String, dynamic>> attributeTagMaps;
-    try {
-      attributeTagMaps = spaceId != null
-          ? await db.query('attribute_tags', where: 'space_id = ?', whereArgs: [spaceId])
-          : await db.query('attribute_tags');
+      // 查询属性标签分组
+      List<Map<String, dynamic>> attributeTagGroupMaps;
+      try {
+        attributeTagGroupMaps = spaceId != null
+            ? await db.query('attribute_tag_groups', where: 'space_id = ?', whereArgs: [spaceId])
+            : await db.query('attribute_tag_groups');
+      } catch (e) {
+        debugPrint('导出失败：查询 attribute_tag_groups 表出错 — $e');
+        rethrow;
+      }
+
+      // 查询入口 — 安全处理 first
+      List<Map<String, dynamic>> spaceMaps;
+      try {
+        if (spaceId != null) {
+          final rows = await db.query('spaces',
+              where: 'id = ?', whereArgs: [spaceId]);
+          spaceMaps = rows.isNotEmpty ? [rows.first] : [];
+        } else {
+          spaceMaps = await db.query('spaces');
+        }
+      } catch (e) {
+        debugPrint('导出失败：查询 spaces 表出错 — $e');
+        spaceMaps = [];
+      }
+
+      // 查询项目分组
+      List<Map<String, dynamic>> projectGroupMaps;
+      try {
+        projectGroupMaps = spaceId != null
+            ? await db.query('project_groups', where: 'space_id = ?', whereArgs: [spaceId])
+            : await db.query('project_groups');
+      } catch (e) {
+        debugPrint('导出失败：查询 project_groups 表出错 — $e');
+        projectGroupMaps = [];
+      }
+
+      // 序列化标签和项目（容错）
+      final tagMaps = tags.map((t) {
+        try { return t.toMap(); } catch (e) {
+          debugPrint('导出失败：序列化标签 #${t.id} 出错 — $e');
+          return <String, dynamic>{'id': t.id, 'name': '(序列化错误)'};
+        }
+      }).toList();
+      final projectMaps = projects.map((p) {
+        try { return p.toMap(); } catch (e) {
+          debugPrint('导出失败：序列化项目 #${p.id} 出错 — $e');
+          return <String, dynamic>{'id': p.id, 'name': '(序列化错误)'};
+        }
+      }).toList();
+
+      final data = {
+        'version': 3,
+        'spaces': spaceMaps,
+        'tags': tagMaps,
+        'projects': projectMaps,
+        'entries': entryMaps,
+        'entry_tags': entryTagMaps,
+        'attribute_tags': attributeTagMaps,
+        'entry_attribute_tags': entryAttributeTagMaps,
+        'attribute_tag_groups': attributeTagGroupMaps,
+        'project_groups': projectGroupMaps,
+      };
+
+      return const JsonEncoder.withIndent('  ').convert(data);
     } catch (e) {
-      debugPrint('导出失败：查询 attribute_tags 表出错 — $e');
+      debugPrint('导出失败：整体异常 — $e');
       rethrow;
     }
-
-    List<Map<String, dynamic>> attributeTagGroupMaps;
-    try {
-      attributeTagGroupMaps = spaceId != null
-          ? await db.query('attribute_tag_groups', where: 'space_id = ?', whereArgs: [spaceId])
-          : await db.query('attribute_tag_groups');
-    } catch (e) {
-      debugPrint('导出失败：查询 attribute_tag_groups 表出错 — $e');
-      rethrow;
-    }
-
-    final data = {
-      'version': 3,
-      'spaces': spaceId != null
-          ? [(await db.query('spaces', where: 'id = ?', whereArgs: [spaceId])).first]
-          : await db.query('spaces'),
-      'tags': tags.map((t) => t.toMap()).toList(),
-      'projects': projects.map((p) => p.toMap()).toList(),
-      'entries': entryMaps,
-      'entry_tags': entryTagMaps,
-      'attribute_tags': attributeTagMaps,
-      'entry_attribute_tags': entryAttributeTagMaps,
-      'attribute_tag_groups': attributeTagGroupMaps,
-      'project_groups': spaceId != null
-          ? await db.query('project_groups', where: 'space_id = ?', whereArgs: [spaceId])
-          : await db.query('project_groups'),
-    };
-
-    return const JsonEncoder.withIndent('  ').convert(data);
   }
 
   /// 从 JSON 导入数据（先清空所有表，再写入）
