@@ -1437,6 +1437,7 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
 }
 
 /// AI 润色按钮（点击弹出风格选择，选中后执行润色）
+/// 始终以用户输入的原始语料为基础切换风格
 class _AIBtn extends StatefulWidget {
   final TextEditingController controller;
 
@@ -1448,14 +1449,20 @@ class _AIBtn extends StatefulWidget {
 
 class _AIBtnState extends State<_AIBtn> {
   bool _loading = false;
+  String? _originalText; // 用户最初输入的原始文本
+
+  /// 获取原始文本：如果从未 AI 处理过则取当前文本，
+  /// 否则取保存的原始文本
+  String get _baseText => _originalText ?? widget.controller.text.trim();
 
   Future<void> _doPolish(int styleIndex) async {
-    final text = widget.controller.text.trim();
-    if (text.isEmpty) return;
+    // 记录原始文本（首次执行时）
+    _originalText ??= widget.controller.text.trim();
+    if (_originalText!.isEmpty) return;
 
     setState(() => _loading = true);
     try {
-      final result = await AIService.polish(text, styleIndex: styleIndex);
+      final result = await AIService.polish(_originalText!, styleIndex: styleIndex);
       if (mounted) {
         widget.controller.text = result;
         widget.controller.selection = TextSelection.collapsed(offset: result.length);
