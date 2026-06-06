@@ -66,6 +66,9 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   int? _selectedProjectId;
   String? _selectedProjectName;
 
+  // 记录时间（默认当前，可手动修改）
+  late DateTime _createdAt;
+
   // 保存状态
   bool _saving = false;
 
@@ -98,6 +101,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   @override
   void initState() {
     super.initState();
+    _createdAt = widget.entry?.createdAt ?? DateTime.now();
     _loadTags();
     _loadAttributeTags();
     if (_isEditMode) {
@@ -200,6 +204,28 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     if (result != null) {
       setState(() => _selectedAttributeTagIds = result);
     }
+  }
+
+  /// 弹出日期时间选择器
+  Future<void> _openTimePicker() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _createdAt,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (date == null || !context.mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_createdAt),
+    );
+    if (time == null) return;
+    setState(() {
+      _createdAt = DateTime(
+        date.year, date.month, date.day,
+        time.hour, time.minute,
+      );
+    });
   }
 
   /// 弹出项目选择器（独立窗口）
@@ -407,6 +433,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           tagIds: tagIds,
           attributeTagIds: attrTagIds,
           projectId: _selectedProjectId,
+          createdAt: _createdAt,
         );
       } else {
         await _db.createEntry(
@@ -416,6 +443,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           attributeTagIds: attrTagIds,
           projectId: _selectedProjectId,
           spaceId: _spaceId,
+          createdAt: _createdAt,
         );
       }
       if (mounted) {
@@ -623,6 +651,39 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       const Divider(),
       const SizedBox(height: 12),
 
+      // ---- 记录时间 ----
+      InkWell(
+        onTap: _openTimePicker,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.access_time,
+                  size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _formatEditorDateTime(_createdAt),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              Icon(Icons.edit_outlined,
+                  size: 14, color: theme.colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
       // ---- 树状标签选择 ----
       _SectionHeader(
         icon: Icons.label_outline,
@@ -790,6 +851,13 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     ];
   }
 
+
+  String _formatEditorDateTime(DateTime dt) {
+    final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+    return '${dt.year}年${dt.month}月${dt.day}日 '
+        '周${weekdays[dt.weekday - 1]} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   void dispose() {

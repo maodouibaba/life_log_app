@@ -56,6 +56,9 @@ class _LifeLogAppState extends State<LifeLogApp> {
           centerTitle: true,
           elevation: 0,
         ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -63,6 +66,9 @@ class _LifeLogAppState extends State<LifeLogApp> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
       ),
       themeMode: ThemeSettings().mode,
       home: const _AppEntry(),

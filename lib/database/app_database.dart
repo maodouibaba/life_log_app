@@ -1045,17 +1045,23 @@ class AppDatabase {
       {String? title,
       List<int>? tagIds,
       List<int>? attributeTagIds,
-      int? projectId}) async {
+      int? projectId,
+      DateTime? createdAt}) async {
     final db = await database;
+
+    final updateData = <String, dynamic>{
+      'title': title,
+      'content': content,
+      'updated_at': DateTime.now().toIso8601String(),
+      'project_id': projectId,
+    };
+    if (createdAt != null) {
+      updateData['created_at'] = createdAt.toIso8601String();
+    }
 
     await db.update(
       'entries',
-      {
-        'title': title,
-        'content': content,
-        'updated_at': DateTime.now().toIso8601String(),
-        'project_id': projectId,
-      },
+      updateData,
       where: 'id = ?',
       whereArgs: [entryId],
     );
