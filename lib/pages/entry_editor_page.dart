@@ -67,6 +67,9 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   // 保存状态
   bool _saving = false;
 
+  // 标记初始标签是否已加载（编辑模式专用）
+  bool _initialTagsLoaded = false;
+
   /// 获取叶标签 + 所有祖先的 ID
   Set<int> get _effectiveTagIds {
     if (_selectedLeafTagId == null) return {};
@@ -106,15 +109,18 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       // 属性标签
       _selectedAttributeTagIds =
           widget.entry!.attributeTags.map((t) => t.id!).toSet();
+      _initialTagsLoaded = true;
     }
   }
 
   Future<void> _loadTags() async {
     _allTags = await _db.getAllTags(spaceId: _spaceId);
-    // 编辑模式：等 _allTags 加载完成后再重新确定最深标签
-    if (_isEditMode && _allTags.isNotEmpty) {
+    // 编辑模式：仅在首次加载时确定最深标签
+    // 后续调用（如标签选择器返回后）不覆盖用户已选的标签
+    if (_isEditMode && !_initialTagsLoaded && _allTags.isNotEmpty) {
       _selectedLeafTagId =
           _findDeepestTag(widget.entry!.tags.map((t) => t.id!).toSet());
+      _initialTagsLoaded = true;
     }
     if (mounted) setState(() {});
   }
@@ -248,6 +254,20 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     }
   }
 
+  /// 在 TextEditingController 的光标位置插入文本
+  void _insertFormatting(TextEditingController c, String prefix, String suffix,
+      {String hint = ''}) {
+    final sel = c.selection;
+    final text = c.text;
+    final selected = sel.isValid && sel.start != sel.end
+        ? text.substring(sel.start, sel.end)
+        : hint;
+    final newText = text.replaceRange(sel.start, sel.end, '$prefix$selected$suffix');
+    c.text = newText;
+    c.selection = TextSelection.collapsed(
+        offset: sel.start + prefix.length + selected.length + suffix.length);
+  }
+
   /// 弹出详细情况输入框
   Future<void> _openContentDialog() async {
     final controller = TextEditingController(text: _contentController.text);
@@ -257,18 +277,68 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         title: const Text('详细情况'),
         content: SizedBox(
           width: double.maxFinite,
-          height: 350,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            decoration: const InputDecoration(
-              hintText: '详细情况...\n支持列表格式：\n- 无序列表项\n1. 有序列表项',
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
-            ),
+          height: 400,
+          child: Column(
+            children: [
+              // 格式化工具栏
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    _FormatBtn(
+                      icon: Icons.format_bold,
+                      tooltip: '粗体 (**text**)',
+                      onTap: () => _insertFormatting(controller, '**', '**', hint: '粗体文字'),
+                    ),
+                    const SizedBox(width: 2),
+                    _FormatBtn(
+                      icon: Icons.format_italic,
+                      tooltip: '斜体 (*text*)',
+                      onTap: () => _insertFormatting(controller, '*', '*', hint: '斜体文字'),
+                    ),
+                    const SizedBox(width: 2),
+                    _FormatBtn(
+                      icon: Icons.format_list_bulleted,
+                      tooltip: '无序列表',
+                      onTap: () => _insertFormatting(controller, '- ', ''),
+                    ),
+                    const SizedBox(width: 2),
+                    _FormatBtn(
+                      icon: Icons.format_list_numbered,
+                      tooltip: '有序列表',
+                      onTap: () => _insertFormatting(controller, '1. ', ''),
+                    ),
+                    const SizedBox(width: 2),
+                    _FormatBtn(
+                      icon: Icons.title,
+                      tooltip: '标题 (#)',
+                      onTap: () => _insertFormatting(controller, '# ', ''),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 文本框
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: const InputDecoration(
+                    hintText: '在此输入详细情况...',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -1347,6 +1417,31 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
           child: const Text('确定'),
         ),
       ],
+    );
+  }
+}
+
+/// 格式化工具栏按钮
+class _FormatBtn extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _FormatBtn({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        child: Icon(icon, size: 18),
+      ),
     );
   }
 }

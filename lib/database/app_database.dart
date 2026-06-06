@@ -12,20 +12,116 @@ import '../models/project_group.dart';
 import '../models/attribute_tag.dart';
 import '../models/attribute_tag_group.dart';
 import '../models/space.dart';
+import 'web_database.dart';
 
 /// 本地数据库管理类 v3
 /// 支持多入口、标题字段、属性标签、项目分组
+/// 在 Web 上使用 InMemory 实现
 class AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
   factory AppDatabase() => _instance;
   AppDatabase._internal();
 
   Database? _database;
+  WebDatabase? _webDb;
+  bool get _isWeb => kIsWeb;
 
+  /// 获取数据库实例（sqflite 或 Web 内存数据库）
   Future<Database> get database async {
+    if (_isWeb) {
+      if (_webDb != null) return _webDb!;
+      _webDb = WebDatabase();
+      await _initWebDatabase(_webDb!);
+      return _webDb!;
+    }
     if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;
+  }
+
+  /// 初始化 Web 内存数据库的表和默认数据
+  Future<void> _initWebDatabase(WebDatabase db) async {
+    await db.execute('''
+      CREATE TABLE spaces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        created_at TEXT NOT NULL,
+        space_id INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE project_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        space_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        space_id INTEGER NOT NULL DEFAULT 1,
+        group_id INTEGER
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        project_id INTEGER,
+        space_id INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE entry_tags (
+        entry_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (entry_id, tag_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE attribute_tag_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        space_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE attribute_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        group_id INTEGER,
+        space_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE entry_attribute_tags (
+        entry_id INTEGER NOT NULL,
+        attribute_tag_id INTEGER NOT NULL,
+        PRIMARY KEY (entry_id, attribute_tag_id)
+      )
+    ''');
+    // 创建默认入口
+    await db.insert('spaces', {
+      'name': '默认',
+      'created_at': DateTime.now().toIso8601String(),
+    });
   }
 
   Future<Database> _initDatabase() async {
