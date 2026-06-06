@@ -51,25 +51,38 @@ class AISettings {
   factory AISettings() => _instance;
   AISettings._internal();
 
+  /// 默认润色提示词（用户可修改）
+  static const String defaultPolishPrompt =
+      '你是一位文字助手。请对用户输入的文本进行整理和规范表达，'
+      '要求：1. 修正错别字和语病 2. 让表达更加清晰通顺 3. 保持原意不变 '
+      '4. 不要添加原文没有的内容 5. 保持原文的风格和语气 6. 直接输出结果，不要任何解释';
+
   String _apiKey = '';
   bool _enabled = true;
   int _providerIndex = 0; // 默认 DeepSeek
   String _customApiUrl = '';
   String _customModel = '';
+  String _customPrompt = '';
 
   String get apiKey => _apiKey;
   bool get enabled => _enabled;
   int get providerIndex => _providerIndex;
   String get customApiUrl => _customApiUrl;
   String get customModel => _customModel;
+  String get customPrompt => _customPrompt;
 
   set apiKey(String key) => _apiKey = key;
   set enabled(bool v) => _enabled = v;
   set providerIndex(int v) => _providerIndex = v;
   set customApiUrl(String v) => _customApiUrl = v;
   set customModel(String v) => _customModel = v;
+  set customPrompt(String v) => _customPrompt = v;
 
   bool get hasKey => _apiKey.isNotEmpty;
+
+  /// 获取实际使用的提示词（用户自定义或默认）
+  String get effectivePolishPrompt =>
+      _customPrompt.isNotEmpty ? _customPrompt : defaultPolishPrompt;
 
   AIProvider get provider {
     if (_providerIndex >= 0 && _providerIndex < AIProvider.all.length) {
@@ -99,9 +112,7 @@ class AIService {
 
     String systemPrompt;
     if (mode == 'polish') {
-      systemPrompt = '你是一位文字助手。请对用户输入的文本进行整理和规范表达，'
-          '要求：1. 修正错别字和语病 2. 让表达更加清晰通顺 3. 保持原意不变 '
-          '4. 不要添加原文没有的内容 5. 保持原文的风格和语气 6. 直接输出结果，不要任何解释';
+      systemPrompt = s.effectivePolishPrompt;
     } else {
       systemPrompt = '你是一位文字助手。请在用户输入的基础上进行适当扩写，'
           '使内容更丰富完整，同时保持原意。直接输出结果，不要任何解释。';

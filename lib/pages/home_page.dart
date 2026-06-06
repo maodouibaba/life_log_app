@@ -126,6 +126,7 @@ class _HomePageState extends State<HomePage> {
     final keyController = TextEditingController(text: settings.apiKey);
     final urlController = TextEditingController(text: settings.customApiUrl);
     final modelController = TextEditingController(text: settings.customModel);
+    final promptController = TextEditingController(text: settings.customPrompt);
     bool enabled = settings.enabled;
     int providerIndex = settings.providerIndex;
 
@@ -244,6 +245,39 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 11,
                         color: Theme.of(ctx).colorScheme.onSurfaceVariant),
                   ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  // 自定义提示词
+                  Row(
+                    children: [
+                      Icon(Icons.edit_note, size: 16,
+                          color: Theme.of(ctx).colorScheme.primary),
+                      const SizedBox(width: 6),
+                      const Text('润色提示词',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '自定义 AI 润色的提示词，留空则使用默认提示词',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: promptController,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      hintText: AISettings.defaultPolishPrompt,
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      alignLabelWithHint: true,
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                  ),
                 ],
               ],
             ),
@@ -260,6 +294,7 @@ class _HomePageState extends State<HomePage> {
                 settings.providerIndex = providerIndex;
                 settings.customApiUrl = urlController.text.trim();
                 settings.customModel = modelController.text.trim();
+                settings.customPrompt = promptController.text.trim();
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(
@@ -279,6 +314,7 @@ class _HomePageState extends State<HomePage> {
     keyController.dispose();
     urlController.dispose();
     modelController.dispose();
+    promptController.dispose();
   }
 
   String _apiKeyHint(int providerIndex) {
