@@ -967,27 +967,66 @@ class AppDatabase {
 
   /// 导出为 JSON（指定空间或全部）
   Future<String> exportToJson({int? spaceId}) async {
-    try {
-      final tags = spaceId != null
-          ? await getAllTags(spaceId: spaceId)
-          : await getAllTags();
-      final projects = spaceId != null
-          ? await getAllProjects(spaceId: spaceId)
-          : await getAllProjects();
-      final db = await database;
+    final errors = <String>[];
 
-      final whereClause = spaceId != null ? 'WHERE space_id = ?' : '';
-      final whereArgs = spaceId != null ? [spaceId] : null;
+    // 辅助：查询表，失败时返回空列表并记录错误
+    Future<List<Map<String, dynamic>>> safeQuery(
+        String table, {
+          String? where,
+          List<Object?>? whereArgs,
+          String? orderBy,
+        }) async {
+      try {
+        final db = await database;
+        return await db.query(table,
+            where: where, whereArgs: whereArgs, orderBy: orderBy);
+      } catch (e) {
+        final msg = '查询表 $table 出错: $e';
+        debugPrint('导出 — $msg');
+        errors.add(msg);
+        return [];
+      }
+    }
+
+    // 辅助：执行 rawQuery，失败时返回空列表
+    Future<List<Map<String, dynamic>>> safeRawQuery(
+        String sql, List<Object?> args) async {
+      try {
+        final db = await database;
+        return await db.rawQuery(sql, args);
+      } catch (e) {
+        final msg = 'rawQuery 出错: $e';
+        debugPrint('导出 — $msg');
+        errors.add(msg);
+        return [];
+      }
+    }
+
+    try {
+      final tags = await (spaceId != null
+          ? getAllTags(spaceId: spaceId)
+          : getAllTags()).catchError((e) {
+        final msg = '获取 tags 列表出错: $e';
+        debugPrint('导出 — $msg');
+        errors.add(msg);
+        return <Tag>[];
+      });
+
+      final projects = await (spaceId != null
+          ? getAllProjects(spaceId: spaceId)
+          : getAllProjects()).catchError((e) {
+        final msg = '获取 projects 列表出错: $e';
+        debugPrint('导出 — $msg');
+        errors.add(msg);
+        return <Project>[];
+      });
 
       // 查询记录
-      List<Map<String, dynamic>> entryMaps;
-      try {
-        entryMaps = await db.query('entries',
-            where: whereClause, whereArgs: whereArgs, orderBy: 'id ASC');
-      } catch (e) {
-        debugPrint('导出失败：查询 entries 表出错 — $e');
-        rethrow;
-      }
+      final entryMaps = await safeQuery('entries',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null,
+          orderBy: 'id ASC');
+
       final entryIds = entryMaps.map((m) => m['id'] as int).toList();
 
       // 查询关联表
@@ -996,82 +1035,54 @@ class AppDatabase {
 
       if (entryIds.isNotEmpty) {
         final ph = entryIds.map((_) => '?').join(',');
-        try {
-          entryTagMaps = await db.rawQuery(
-              'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-              entryIds);
-        } catch (e) {
-          debugPrint('导出失败：查询 entry_tags 表出错 — $e');
-          rethrow;
-        }
-        try {
-          entryAttributeTagMaps = await db.rawQuery(
-              'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
-              entryIds);
-        } catch (e) {
-          debugPrint('导出失败：查询 entry_attribute_tags 表出错 — $e');
-          rethrow;
-        }
+        entryTagMaps = await safeRawQuery(
+            'SELECT * FROM entry_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+            entryIds);
+        entryAttributeTagMaps = await safeRawQuery(
+            'SELECT * FROM entry_attribute_tags WHERE entry_id IN ($ph) ORDER BY entry_id ASC',
+            entryIds);
       }
 
       // 查询属性标签
-      List<Map<String, dynamic>> attributeTagMaps;
-      try {
-        attributeTagMaps = spaceId != null
-            ? await db.query('attribute_tags', where: 'space_id = ?', whereArgs: [spaceId])
-            : await db.query('attribute_tags');
-      } catch (e) {
-        debugPrint('导出失败：查询 attribute_tags 表出错 — $e');
-        rethrow;
-      }
+      final attributeTagMaps = await safeQuery('attribute_tags',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
 
       // 查询属性标签分组
-      List<Map<String, dynamic>> attributeTagGroupMaps;
-      try {
-        attributeTagGroupMaps = spaceId != null
-            ? await db.query('attribute_tag_groups', where: 'space_id = ?', whereArgs: [spaceId])
-            : await db.query('attribute_tag_groups');
-      } catch (e) {
-        debugPrint('导出失败：查询 attribute_tag_groups 表出错 — $e');
-        rethrow;
-      }
+      final attributeTagGroupMaps = await safeQuery('attribute_tag_groups',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
 
-      // 查询入口 — 安全处理 first
-      List<Map<String, dynamic>> spaceMaps;
-      try {
-        if (spaceId != null) {
-          final rows = await db.query('spaces',
-              where: 'id = ?', whereArgs: [spaceId]);
-          spaceMaps = rows.isNotEmpty ? [rows.first] : [];
-        } else {
-          spaceMaps = await db.query('spaces');
-        }
-      } catch (e) {
-        debugPrint('导出失败：查询 spaces 表出错 — $e');
-        spaceMaps = [];
-      }
+      // 查询入口
+      final spaceMaps = await safeQuery('spaces',
+          where: spaceId != null ? 'id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
 
       // 查询项目分组
-      List<Map<String, dynamic>> projectGroupMaps;
-      try {
-        projectGroupMaps = spaceId != null
-            ? await db.query('project_groups', where: 'space_id = ?', whereArgs: [spaceId])
-            : await db.query('project_groups');
-      } catch (e) {
-        debugPrint('导出失败：查询 project_groups 表出错 — $e');
-        projectGroupMaps = [];
-      }
+      final projectGroupMaps = await safeQuery('project_groups',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
 
-      // 序列化标签和项目（容错）
+      // 序列化标签（逐条容错）
       final tagMaps = tags.map((t) {
-        try { return t.toMap(); } catch (e) {
-          debugPrint('导出失败：序列化标签 #${t.id} 出错 — $e');
+        try {
+          return t.toMap();
+        } catch (e) {
+          final msg = '序列化标签 #${t.id} 出错: $e';
+          debugPrint('导出 — $msg');
+          errors.add(msg);
           return <String, dynamic>{'id': t.id, 'name': '(序列化错误)'};
         }
       }).toList();
+
+      // 序列化项目（逐条容错）
       final projectMaps = projects.map((p) {
-        try { return p.toMap(); } catch (e) {
-          debugPrint('导出失败：序列化项目 #${p.id} 出错 — $e');
+        try {
+          return p.toMap();
+        } catch (e) {
+          final msg = '序列化项目 #${p.id} 出错: $e';
+          debugPrint('导出 — $msg');
+          errors.add(msg);
           return <String, dynamic>{'id': p.id, 'name': '(序列化错误)'};
         }
       }).toList();
@@ -1087,12 +1098,42 @@ class AppDatabase {
         'entry_attribute_tags': entryAttributeTagMaps,
         'attribute_tag_groups': attributeTagGroupMaps,
         'project_groups': projectGroupMaps,
+        if (errors.isNotEmpty) '_export_errors': errors,
       };
 
-      return const JsonEncoder.withIndent('  ').convert(data);
+      // JSON 编码——先用普通编码试，不行就简化
+      String jsonStr;
+      try {
+        jsonStr = const JsonEncoder.withIndent('  ').convert(data);
+      } catch (e) {
+        debugPrint('导出 — 缩进编码失败，尝试无缩进编码: $e');
+        errors.add('缩进编码失败: $e');
+        try {
+          jsonStr = jsonEncode(data); // 无缩进，更轻量
+        } catch (e2) {
+          debugPrint('导出 — 无缩进编码也失败: $e2');
+          errors.add('无缩进编码也失败: $e2');
+          // 最后手段：只导出 entries 表
+          final minimalData = {
+            'version': 3,
+            'entries': entryMaps,
+            '_export_errors': errors,
+            '_note': '完整导出失败，仅导出 entries 表',
+          };
+          jsonStr = jsonEncode(minimalData);
+        }
+      }
+
+      return jsonStr;
     } catch (e) {
-      debugPrint('导出失败：整体异常 — $e');
-      rethrow;
+      final msg = '导出整体异常: $e';
+      debugPrint('导出 — $msg');
+      // 返回错误信息而非抛出，让调用方能显示有用信息
+      return jsonEncode({
+        'version': 3,
+        '_export_fatal_error': '$e',
+        '_export_errors': errors,
+      });
     }
   }
 

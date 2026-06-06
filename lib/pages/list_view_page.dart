@@ -4,6 +4,7 @@ import '../models/entry.dart';
 import '../models/tag.dart';
 import '../models/project.dart';
 import '../models/attribute_tag.dart';
+import '../services/undo_manager.dart';
 import 'entry_detail_page.dart';
 
 /// 列表视图页面
@@ -669,55 +670,67 @@ class _ListViewPageState extends State<ListViewPage> {
             ),
           ),
 
-          // 筛选按钮行（可横向滚动，防止溢出）
+          // 筛选与分组控制区（卡片式整合）
           Padding(
-            padding: const EdgeInsets.only(left: 12, right: 12, top: 4),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-              children: [
-                _FilterChip(
-                  icon: Icons.date_range,
-                  label: '日期',
-                  active: _startDate != null,
-                  onTap: _selectMode ? null : _pickDate,
-                ),
-                const SizedBox(width: 4),
-                _FilterChip(
-                  icon: Icons.label,
-                  label: '树状标签',
-                  active: _filterTagIds.isNotEmpty,
-                  onTap: _selectMode ? null : _pickTag,
-                ),
-                const SizedBox(width: 4),
-                _FilterChip(
-                  icon: Icons.turned_in_not,
-                  label: '属性标签',
-                  active: _filterAttributeTagIds.isNotEmpty,
-                  onTap: _selectMode ? null : _pickAttributeTag,
-                ),
-                const SizedBox(width: 4),
-                _FilterChip(
-                  icon: Icons.folder_outlined,
-                  label: '项目',
-                  active: _filterProjectIds.isNotEmpty,
-                  onTap: _selectMode ? null : _pickProject,
-                ),
-              ],
-            ),
-          ),
-        ),
-
-          // 分组方式行
-          Padding(
-            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
-            child: Row(
-              children: [
-                _GroupByButton(
-                  currentGroupBy: _groupBy,
-                  onSelected: (v) => setState(() => _groupBy = v),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 第一行：筛选按钮
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _FilterChip(
+                        icon: Icons.date_range,
+                        label: '日期',
+                        active: _startDate != null,
+                        onTap: _selectMode ? null : _pickDate,
+                      ),
+                      _FilterChip(
+                        icon: Icons.label,
+                        label: '树状标签',
+                        active: _filterTagIds.isNotEmpty,
+                        onTap: _selectMode ? null : _pickTag,
+                      ),
+                      _FilterChip(
+                        icon: Icons.turned_in_not,
+                        label: '属性标签',
+                        active: _filterAttributeTagIds.isNotEmpty,
+                        onTap: _selectMode ? null : _pickAttributeTag,
+                      ),
+                      _FilterChip(
+                        icon: Icons.folder_outlined,
+                        label: '项目',
+                        active: _filterProjectIds.isNotEmpty,
+                        onTap: _selectMode ? null : _pickProject,
+                      ),
+                    ],
+                  ),
+                  // 第二行：分组方式
+                  if (_entries.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.view_headline,
+                            size: 14, color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        _GroupByButton(
+                          currentGroupBy: _groupBy,
+                          onSelected: (v) => setState(() => _groupBy = v),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
 
@@ -762,8 +775,60 @@ class _ListViewPageState extends State<ListViewPage> {
                             selectedIds: _selectedIds,
                             theme: theme,
                             onToggle: _toggleItem,
+                            onDelete: (entry) async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('删除记录'),
+                                  content: Text('确定要删除「${entry.title ?? entry.content}」吗？'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('取消')),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: Text('删除',
+                                          style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                UndoManager().recordDeletion(entry);
+                                await _db.deleteEntry(entry.id!);
+                                _loadData();
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('已删除'),
+                                    action: SnackBarAction(
+                                      label: '撤销',
+                                      onPressed: () async {
+                                        final ok = await UndoManager().undoDelete();
+                                        if (mounted) {
+                                          if (ok) {
+                                            _loadData();
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(content: Text('已撤销删除')),
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                  content: Text('撤销失败'),
+                                                  backgroundColor: Colors.red),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
                             onTapEntry: (entry) async {
-                              await Navigator.push(
+                              final result = await Navigator.push<Object>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) =>
@@ -771,6 +836,29 @@ class _ListViewPageState extends State<ListViewPage> {
                                 ),
                               );
                               _loadData();
+                              if (result == 'edit' && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('已保存'),
+                                    action: SnackBarAction(
+                                      label: '撤销',
+                                      onPressed: () async {
+                                        final ok =
+                                            await UndoManager().undoEdit();
+                                        if (mounted) {
+                                          _loadData();
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                                content: Text(
+                                                    ok ? '已撤销编辑' : '撤销失败')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
                             },
                             formatDateTime: _formatDateTime,
                           );
@@ -891,6 +979,7 @@ class _GroupSection extends StatefulWidget {
   final Set<int> selectedIds;
   final ThemeData theme;
   final Function(int) onToggle;
+  final Function(Entry) onDelete;
   final Function(Entry) onTapEntry;
   final String Function(DateTime) formatDateTime;
 
@@ -901,6 +990,7 @@ class _GroupSection extends StatefulWidget {
     required this.selectedIds,
     required this.theme,
     required this.onToggle,
+    required this.onDelete,
     required this.onTapEntry,
     required this.formatDateTime,
   });
@@ -1039,6 +1129,11 @@ class _GroupSectionState extends State<_GroupSection> {
                   ],
                 ),
               ],
+            ),
+            trailing: IconButton(
+              icon: Icon(Icons.delete_outline,
+                  size: 18, color: widget.theme.colorScheme.error),
+              onPressed: () => widget.onDelete(entry),
             ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

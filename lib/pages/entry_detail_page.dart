@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/entry.dart';
 import '../database/app_database.dart';
+import '../utils/text_formatter.dart';
 import 'entry_editor_page.dart';
 
 /// 记录详情页（只读）
@@ -24,7 +25,7 @@ class EntryDetailPage extends StatelessWidget {
               final db = AppDatabase();
               final fresh = await db.getEntry(entry.id!);
               if (!context.mounted) return;
-              await Navigator.pushReplacement(
+              final _ = await Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
                   builder: (_) => EntryEditorPage(
@@ -33,6 +34,8 @@ class EntryDetailPage extends StatelessWidget {
                   ),
                 ),
               );
+              // 编辑结果由 home_page（调用方）接收并处理撤销
+              // result 通过 pushReplacement 透传回调用方
             },
           ),
         ],
@@ -157,10 +160,10 @@ class EntryDetailPage extends StatelessWidget {
             const Divider(),
             const SizedBox(height: 16),
 
-            // 详细情况
-            SelectableText(
+            // 详细情况（支持列表、粗体、斜体等格式）
+            ...TextFormatter.render(
               entry.content,
-              style: const TextStyle(fontSize: 16, height: 1.7),
+              baseStyle: const TextStyle(fontSize: 16),
             ),
           ],
         ),

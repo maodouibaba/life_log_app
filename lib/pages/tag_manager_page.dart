@@ -16,6 +16,7 @@ class TagManagerPage extends StatefulWidget {
 class _TagManagerPageState extends State<TagManagerPage> {
   final AppDatabase _db = AppDatabase();
   List<Tag> _allTags = [];
+  final Set<int> _expandedIds = {}; // 展开状态，从父级控制以便一键展开/收起
 
   int get _spaceId => widget.spaceId;
 
@@ -37,6 +38,20 @@ class _TagManagerPageState extends State<TagManagerPage> {
   List<Tag> _getChildren(int parentId) =>
       _allTags.where((t) => t.parentId == parentId).toList()
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+  void _expandAll() {
+    setState(() {
+      for (final t in _allTags) {
+        if (t.id != null && _getChildren(t.id!).isNotEmpty) {
+          _expandedIds.add(t.id!);
+        }
+      }
+    });
+  }
+
+  void _collapseAll() {
+    setState(() => _expandedIds.clear());
+  }
 
   Future<void> _addTag({int? parentId}) async {
     final controller = TextEditingController();
@@ -186,6 +201,18 @@ class _TagManagerPageState extends State<TagManagerPage> {
       appBar: AppBar(
         title: const Text('树状标签管理'),
         actions: [
+          if (rootTags.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.unfold_more),
+              tooltip: '全部展开',
+              onPressed: _expandAll,
+            ),
+            IconButton(
+              icon: const Icon(Icons.unfold_less),
+              tooltip: '全部收起',
+              onPressed: _collapseAll,
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '新建根标签',
@@ -208,12 +235,23 @@ class _TagManagerPageState extends State<TagManagerPage> {
                 ],
               ),
             )
-          : _ReorderableTagList(
+          : SingleChildScrollView(
+              child: _ReorderableTagList(
               tags: rootTags,
               parentId: null,
               allTags: _allTags,
               getChildren: _getChildren,
               level: 0,
+              expandedIds: _expandedIds,
+              onToggleExpand: (tagId) {
+                setState(() {
+                  if (_expandedIds.contains(tagId)) {
+                    _expandedIds.remove(tagId);
+                  } else {
+                    _expandedIds.add(tagId);
+                  }
+                });
+              },
               onAddChild: (parentId) => _addTag(parentId: parentId),
               onEdit: _editTag,
               onMove: _moveTag,
@@ -221,6 +259,7 @@ class _TagManagerPageState extends State<TagManagerPage> {
               onReorder: _reorderChildrenOf,
               onChanged: _loadTags,
             ),
+          ),
     );
   }
 }
@@ -232,6 +271,8 @@ class _ReorderableTagList extends StatefulWidget {
   final List<Tag> allTags;
   final List<Tag> Function(int parentId) getChildren;
   final int level;
+  final Set<int> expandedIds;
+  final void Function(int tagId) onToggleExpand;
   final void Function(int parentId) onAddChild;
   final Function(Tag) onEdit;
   final Function(Tag) onMove;
@@ -245,6 +286,8 @@ class _ReorderableTagList extends StatefulWidget {
     required this.allTags,
     required this.getChildren,
     required this.level,
+    required this.expandedIds,
+    required this.onToggleExpand,
     required this.onAddChild,
     required this.onEdit,
     required this.onMove,
@@ -258,10 +301,7 @@ class _ReorderableTagList extends StatefulWidget {
 }
 
 class _ReorderableTagListState extends State<_ReorderableTagList> {
-  // 展开状态 key = tag id
-  final Set<int> _expandedIds = {};
-
-  bool _isExpanded(Tag tag) => _expandedIds.contains(tag.id);
+  bool _isExpanded(Tag tag) => widget.expandedIds.contains(tag.id);
   bool _hasChildren(Tag tag) => widget.getChildren(tag.id!).isNotEmpty;
 
   @override
@@ -309,13 +349,8 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
                                 : Icons.chevron_right,
                             size: 18,
                           ),
-                          onPressed: () => setState(() {
-                            if (isExpanded) {
-                              _expandedIds.remove(tag.id!);
-                            } else {
-                              _expandedIds.add(tag.id!);
-                            }
-                          }),
+                          onPressed: () =>
+                              widget.onToggleExpand(tag.id!),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
                               minWidth: 24, minHeight: 24),
@@ -372,6 +407,8 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
                 allTags: widget.allTags,
                 getChildren: widget.getChildren,
                 level: widget.level + 1,
+                expandedIds: widget.expandedIds,
+                onToggleExpand: widget.onToggleExpand,
                 onAddChild: widget.onAddChild,
                 onEdit: widget.onEdit,
                 onMove: widget.onMove,

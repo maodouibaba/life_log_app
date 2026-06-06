@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
@@ -25,6 +26,23 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     setState(() => _exporting = true);
     try {
       final json = await _db.exportToJson();
+
+      // 检查返回的 JSON 是否包含错误信息
+      String? warningMsg;
+      try {
+        final parsed = jsonDecode(json) as Map<String, dynamic>;
+        if (parsed.containsKey('_export_fatal_error')) {
+          warningMsg = '导出过程遇到严重错误，生成的文件可能不完整：\n'
+              '${parsed['_export_fatal_error']}';
+        } else if (parsed.containsKey('_export_errors')) {
+          final errList = parsed['_export_errors'] as List;
+          if (errList.isNotEmpty) {
+            warningMsg = '导出过程中有以下问题（文件可能部分缺失）：\n'
+                '${errList.join('\n')}';
+          }
+        }
+      } catch (_) {}
+
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final filePath = '${dir.path}/生活记录备份_$timestamp.json';
@@ -36,8 +54,29 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('备份成功'),
-          content: Text('已保存到：$filePath'),
+          title: Text(warningMsg != null ? '备份完成（有警告）' : '备份成功'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (warningMsg != null)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: SelectableText(warningMsg,
+                        style: const TextStyle(fontSize: 13, color: Colors.deepOrange)),
+                  ),
+                SelectableText('已保存到：$filePath',
+                    style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () {

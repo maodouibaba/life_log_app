@@ -6,6 +6,7 @@ import '../models/attribute_tag.dart';
 import '../models/attribute_tag_group.dart';
 import '../models/project_group.dart';
 import '../database/app_database.dart';
+import '../services/undo_manager.dart';
 
 /// 新增/编辑记录页面
 /// 标题 + 内容双字段，通过独立弹窗选择树状标签、属性标签、项目
@@ -22,9 +23,10 @@ class EntryEditorPage extends StatefulWidget {
   });
 
   /// 以弹出窗口形式（底部弹窗）打开新建/编辑记录页面
-  static Future<bool?> showAsSheet(BuildContext context,
+  /// 返回 true=新建, 'edit'=编辑已保存, null=取消
+  static Future<Object?> showAsSheet(BuildContext context,
       {Entry? entry, required int spaceId}) {
-    return showModalBottomSheet<bool>(
+    return showModalBottomSheet<Object>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -109,6 +111,11 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   Future<void> _loadTags() async {
     _allTags = await _db.getAllTags(spaceId: _spaceId);
+    // 编辑模式：等 _allTags 加载完成后再重新确定最深标签
+    if (_isEditMode && _allTags.isNotEmpty) {
+      _selectedLeafTagId =
+          _findDeepestTag(widget.entry!.tags.map((t) => t.id!).toSet());
+    }
     if (mounted) setState(() {});
   }
 
@@ -211,16 +218,18 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('事项简介'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 1,
-          decoration: const InputDecoration(
-            hintText: '如：今天的工作总结',
-            border: OutlineInputBorder(),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 4,
+            minLines: 2,
+            decoration: const InputDecoration(
+              hintText: '如：今天的工作总结',
+              border: OutlineInputBorder(),
+            ),
           ),
-          textInputAction: TextInputAction.done,
-          onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
           TextButton(
@@ -248,14 +257,17 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         title: const Text('详细情况'),
         content: SizedBox(
           width: double.maxFinite,
+          height: 350,
           child: TextField(
             controller: controller,
             autofocus: true,
-            maxLines: 8,
-            minLines: 3,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
             decoration: const InputDecoration(
-              hintText: '详细情况...',
+              hintText: '详细情况...\n支持列表格式：\n- 无序列表项\n1. 有序列表项',
               border: OutlineInputBorder(),
+              alignLabelWithHint: true,
             ),
           ),
         ),
@@ -298,6 +310,10 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           : null;
 
       if (_isEditMode) {
+        // 记录编辑前状态用于撤销
+        if (widget.entry != null) {
+          UndoManager().recordEdit(widget.entry!);
+        }
         await _db.updateEntryWithTags(
           widget.entry!.id!,
           content,
@@ -317,7 +333,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         );
       }
       if (mounted) {
-        Navigator.pop(context, true);
+        Navigator.pop(context, _isEditMode ? 'edit' : true);
       }
     } catch (e) {
       debugPrint('保存记录失败：$e');
@@ -463,6 +479,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
               Expanded(
                 child: _titleController.text.isNotEmpty
                     ? Text(_titleController.text,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 15))
                     : Text('点击输入事项简介',
                         style: TextStyle(

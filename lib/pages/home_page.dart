@@ -11,6 +11,7 @@ import 'project_manager_page.dart';
 import 'list_view_page.dart';
 import 'data_migration_page.dart';
 import '../services/export_service.dart';
+import '../services/undo_manager.dart';
 
 /// 首页时间线
 /// 展示当前入口下的所有记录，按天分组
@@ -323,7 +324,7 @@ class _HomePageState extends State<HomePage> {
                             entries: dayEntries,
                             formatTime: _formatTime,
                             onTap: (entry) async {
-                              await Navigator.push(
+                              final result = await Navigator.push<Object>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) =>
@@ -331,10 +332,64 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               );
                               _loadEntries();
+                              if (result == 'edit' && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('已保存'),
+                                    action: SnackBarAction(
+                                      label: '撤销',
+                                      onPressed: () async {
+                                        final ok =
+                                            await UndoManager().undoEdit();
+                                        if (mounted) {
+                                          _loadEntries();
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                                content: Text(
+                                                    ok ? '已撤销编辑' : '撤销失败')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
                             },
                             onDelete: (entry) async {
+                              // 记录到撤销管理器
+                              UndoManager().recordDeletion(entry);
                               await _db.deleteEntry(entry.id!);
                               _loadEntries();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('已删除'),
+                                  action: SnackBarAction(
+                                    label: '撤销',
+                                    onPressed: () async {
+                                      final ok = await UndoManager().undoDelete();
+                                      if (mounted) {
+                                        if (ok) {
+                                          _loadEntries();
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                                content: Text('已撤销删除')),
+                                          );
+                                        } else {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                                content: Text('撤销失败'),
+                                                backgroundColor: Colors.red),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ),
+                              );
                             },
                           );
                         },
@@ -342,8 +397,36 @@ class _HomePageState extends State<HomePage> {
                     ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await EntryEditorPage.showAsSheet(context, spaceId: _spaceId);
+          final result =
+              await EntryEditorPage.showAsSheet(context, spaceId: _spaceId);
           _loadEntries();
+          if (result == 'edit' && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('已保存'),
+                action: SnackBarAction(
+                  label: '撤销',
+                  onPressed: () async {
+                    final ok = await UndoManager().undoEdit();
+                    if (mounted) {
+                      if (ok) {
+                        _loadEntries();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已撤销编辑')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('撤销失败'),
+                              backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+            );
+          }
         },
         child: const Icon(Icons.add),
       ),
