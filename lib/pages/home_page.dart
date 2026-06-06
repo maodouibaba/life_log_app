@@ -454,24 +454,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         actions: [
-          if (_entries.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.unfold_more),
-              tooltip: '全部展开',
-              onPressed: () => setState(() {
-                _allDaysExpanded = true;
-                _dayExpandVersion++;
-              }),
-            ),
-            IconButton(
-              icon: const Icon(Icons.unfold_less),
-              tooltip: '全部折叠',
-              onPressed: () => setState(() {
-                _allDaysExpanded = false;
-                _dayExpandVersion++;
-              }),
-            ),
-          ],
           IconButton(
             icon: const Icon(Icons.list_alt),
             tooltip: '列表视图',
@@ -529,6 +511,18 @@ class _HomePageState extends State<HomePage> {
                 case 'export_excel':
                   await _exportToExcel();
                   break;
+                case 'expand_all':
+                  setState(() {
+                    _allDaysExpanded = true;
+                    _dayExpandVersion++;
+                  });
+                  break;
+                case 'collapse_all':
+                  setState(() {
+                    _allDaysExpanded = false;
+                    _dayExpandVersion++;
+                  });
+                  break;
                 case 'data_migration':
                   if (!context.mounted) return;
                   await Navigator.push(
@@ -561,6 +555,26 @@ class _HomePageState extends State<HomePage> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
+              if (_entries.isNotEmpty) ...[
+                PopupMenuItem(
+                  value: 'expand_all',
+                  child: ListTile(
+                    leading: const Icon(Icons.unfold_more),
+                    title: const Text('全部展开'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'collapse_all',
+                  child: ListTile(
+                    leading: const Icon(Icons.unfold_less),
+                    title: const Text('全部折叠'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
               const PopupMenuItem(
                 value: 'data_migration',
                 child: ListTile(
