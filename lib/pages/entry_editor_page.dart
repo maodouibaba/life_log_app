@@ -1436,7 +1436,7 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
   }
 }
 
-/// AI 润色按钮
+/// AI 润色按钮（点击弹出风格选择，选中后执行润色）
 class _AIBtn extends StatefulWidget {
   final TextEditingController controller;
 
@@ -1449,13 +1449,13 @@ class _AIBtn extends StatefulWidget {
 class _AIBtnState extends State<_AIBtn> {
   bool _loading = false;
 
-  Future<void> _doPolish() async {
+  Future<void> _doPolish(int styleIndex) async {
     final text = widget.controller.text.trim();
     if (text.isEmpty) return;
 
     setState(() => _loading = true);
     try {
-      final result = await AIService.polish(text);
+      final result = await AIService.polish(text, styleIndex: styleIndex);
       if (mounted) {
         widget.controller.text = result;
         widget.controller.selection = TextSelection.collapsed(offset: result.length);
@@ -1473,17 +1473,43 @@ class _AIBtnState extends State<_AIBtn> {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: _loading ? null : _doPolish,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        child: _loading
-            ? const SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : Icon(Icons.auto_awesome, size: 18, color: Theme.of(context).colorScheme.primary),
-      ),
+    return PopupMenuButton<int>(
+      onSelected: _doPolish,
+      offset: const Offset(0, 36),
+      enabled: !_loading,
+      child: _loading
+          ? const Padding(
+              padding: EdgeInsets.all(6),
+              child: SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.auto_awesome, size: 16,
+                      color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 2),
+                  Icon(Icons.arrow_drop_down, size: 16,
+                      color: Theme.of(context).colorScheme.primary),
+                ],
+              ),
+            ),
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          enabled: false,
+          child: Text('选择润色风格', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+        ...List.generate(AIWritingStyle.all.length, (i) {
+          final style = AIWritingStyle.all[i];
+          return PopupMenuItem<int>(
+            value: i,
+            child: Text(style.name, style: const TextStyle(fontSize: 13)),
+          );
+        }),
+      ],
     );
   }
 }

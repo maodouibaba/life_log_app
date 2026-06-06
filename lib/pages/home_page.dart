@@ -129,6 +129,7 @@ class _HomePageState extends State<HomePage> {
     final promptController = TextEditingController(text: settings.customPrompt);
     bool enabled = settings.enabled;
     int providerIndex = settings.providerIndex;
+    int styleIndex = settings.styleIndex;
 
     await showDialog(
       context: context,
@@ -190,6 +191,29 @@ class _HomePageState extends State<HomePage> {
                       if (v != null) setDialogState(() => providerIndex = v);
                     },
                   ),
+                  const SizedBox(height: 16),
+                  // 默认风格
+                  const Text('默认写作风格',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<int>(
+                    value: styleIndex,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: List.generate(AIWritingStyle.all.length, (i) {
+                      return DropdownMenuItem(
+                        value: i,
+                        child: Text(AIWritingStyle.all[i].name, style: const TextStyle(fontSize: 14)),
+                      );
+                    }),
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => styleIndex = v);
+                    },
+                  ),
                   const SizedBox(height: 12),
                   // API Key
                   const Text('API Key',
@@ -245,39 +269,41 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 11,
                         color: Theme.of(ctx).colorScheme.onSurfaceVariant),
                   ),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  // 自定义提示词
-                  Row(
-                    children: [
-                      Icon(Icons.edit_note, size: 16,
-                          color: Theme.of(ctx).colorScheme.primary),
-                      const SizedBox(width: 6),
-                      const Text('润色提示词',
-                          style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '自定义 AI 润色的提示词，留空则使用默认提示词',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: promptController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      hintText: AISettings.defaultPolishPrompt,
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      alignLabelWithHint: true,
+                  // 自定义提示词（仅在选择"自定义"风格时显示）
+                  if (AIWritingStyle.all[styleIndex].name == '自定义') ...[
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.edit_note, size: 16,
+                            color: Theme.of(ctx).colorScheme.primary),
+                        const SizedBox(width: 6),
+                        const Text('自定义提示词',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                      ],
                     ),
-                    style: const TextStyle(fontSize: 13),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '输入你自己的润色提示词',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: promptController,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: '输入你的润色提示词...',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        alignLabelWithHint: true,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -295,6 +321,7 @@ class _HomePageState extends State<HomePage> {
                 settings.customApiUrl = urlController.text.trim();
                 settings.customModel = modelController.text.trim();
                 settings.customPrompt = promptController.text.trim();
+                settings.styleIndex = styleIndex;
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(

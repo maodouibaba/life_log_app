@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// AI 供应商配置
+// ==================== AI 供应商 ====================
+
 class AIProvider {
   final String name;
   final String apiUrl;
   final String defaultModel;
-  final bool useBearerAuth; // true=Bearer token, false=x-api-key
+  final bool useBearerAuth;
 
   const AIProvider({
     required this.name,
@@ -16,52 +17,84 @@ class AIProvider {
   });
 
   static const List<AIProvider> all = [
-    AIProvider(
-      name: 'DeepSeek（推荐）',
-      apiUrl: 'https://api.deepseek.com/v1/chat/completions',
-      defaultModel: 'deepseek-chat',
+    AIProvider(name: 'DeepSeek（推荐）', apiUrl: 'https://api.deepseek.com/v1/chat/completions', defaultModel: 'deepseek-chat'),
+    AIProvider(name: '通义千问', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', defaultModel: 'qwen-turbo'),
+    AIProvider(name: 'Anthropic Claude', apiUrl: 'https://api.anthropic.com/v1/messages', defaultModel: 'claude-sonnet-4-20250514', useBearerAuth: false),
+    AIProvider(name: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', defaultModel: 'gpt-4o'),
+    AIProvider(name: '自定义（兼容 OpenAI 格式）', apiUrl: '', defaultModel: ''),
+  ];
+}
+
+// ==================== 写作风格 ====================
+
+class AIWritingStyle {
+  final String name;
+  final String prompt;
+
+  const AIWritingStyle({required this.name, required this.prompt});
+
+  static const List<AIWritingStyle> all = [
+    AIWritingStyle(
+      name: '用户原文风格',
+      prompt: '你是一位文字助手。请对用户输入的文本进行整理，'
+          '要求：1. 修正错别字和语病 2. 让表达更加清晰通顺 '
+          '3. 保持原意不变 4. 不要添加原文没有的内容 '
+          '5. 最大程度保留用户原本的措辞、语气和表达习惯 '
+          '6. 直接输出结果，不要任何解释',
     ),
-    AIProvider(
-      name: '通义千问',
-      apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-      defaultModel: 'qwen-turbo',
+    AIWritingStyle(
+      name: '正式书面风格',
+      prompt: '你是一位文字助手。请将用户输入的文本改写为正式书面风格，'
+          '要求：1. 使用规范的书面语 2. 句式完整、逻辑清晰 '
+          '3. 保持原意不变 4. 适合正式场合阅读 '
+          '5. 直接输出结果，不要任何解释',
     ),
-    AIProvider(
-      name: 'Anthropic Claude',
-      apiUrl: 'https://api.anthropic.com/v1/messages',
-      defaultModel: 'claude-sonnet-4-20250514',
-      useBearerAuth: false,
+    AIWritingStyle(
+      name: '跟自己聊天风格',
+      prompt: '你是一位文字助手。请将用户输入的文本改写成跟自己聊天的语气，'
+          '要求：1. 口语化、轻松自然 2. 像在跟自己对话一样 '
+          '3. 保持原意不变 4. 可以用一些语气词 '
+          '5. 直接输出结果，不要任何解释',
     ),
-    AIProvider(
-      name: 'OpenAI',
-      apiUrl: 'https://api.openai.com/v1/chat/completions',
-      defaultModel: 'gpt-4o',
+    AIWritingStyle(
+      name: '鲁迅风格',
+      prompt: '你是一位文字助手。请用鲁迅（中国现代文学作家）的文风改写以下文本。'
+          '要求：1. 语言凝练冷峻 2. 带点讽刺和深刻 3. 保持原意不变 '
+          '4. 模仿鲁迅的句式节奏和用词习惯 5. 直接输出结果，不要任何解释',
     ),
-    AIProvider(
-      name: '自定义（兼容 OpenAI 格式）',
-      apiUrl: '',
-      defaultModel: '',
+    AIWritingStyle(
+      name: '徐志摩风格',
+      prompt: '你是一位文字助手。请用徐志摩（中国现代诗人）的文风改写以下文本。'
+          '要求：1. 语言优美、富有诗意 2. 情感丰富、意境优美 '
+          '3. 保持原意不变 4. 加入适当的修辞和韵律感 '
+          '5. 直接输出结果，不要任何解释',
+    ),
+    AIWritingStyle(
+      name: '文言文风格',
+      prompt: '你是一位文字助手。请将以下文本翻译为文言文。'
+          '要求：1. 使用文言文词汇和句式 2. 符合文言文语法规范 '
+          '3. 保持原意不变 4. 直接输出结果，不要任何解释',
+    ),
+    AIWritingStyle(
+      name: '自定义',
+      prompt: '', // 用户自定义
     ),
   ];
 }
 
-/// AI 设置（单例）
+// ==================== AI 设置 ====================
+
 class AISettings {
   static final AISettings _instance = AISettings._internal();
   factory AISettings() => _instance;
   AISettings._internal();
 
-  /// 默认润色提示词（用户可修改）
-  static const String defaultPolishPrompt =
-      '你是一位文字助手。请对用户输入的文本进行整理和规范表达，'
-      '要求：1. 修正错别字和语病 2. 让表达更加清晰通顺 3. 保持原意不变 '
-      '4. 不要添加原文没有的内容 5. 保持原文的风格和语气 6. 直接输出结果，不要任何解释';
-
   String _apiKey = '';
   bool _enabled = true;
-  int _providerIndex = 0; // 默认 DeepSeek
+  int _providerIndex = 0;
   String _customApiUrl = '';
   String _customModel = '';
+  int _styleIndex = 0; // 默认"用户原文风格"
   String _customPrompt = '';
 
   String get apiKey => _apiKey;
@@ -69,6 +102,7 @@ class AISettings {
   int get providerIndex => _providerIndex;
   String get customApiUrl => _customApiUrl;
   String get customModel => _customModel;
+  int get styleIndex => _styleIndex;
   String get customPrompt => _customPrompt;
 
   set apiKey(String key) => _apiKey = key;
@@ -76,54 +110,44 @@ class AISettings {
   set providerIndex(int v) => _providerIndex = v;
   set customApiUrl(String v) => _customApiUrl = v;
   set customModel(String v) => _customModel = v;
+  set styleIndex(int v) => _styleIndex = v;
   set customPrompt(String v) => _customPrompt = v;
 
   bool get hasKey => _apiKey.isNotEmpty;
 
-  /// 获取实际使用的提示词（用户自定义或默认）
-  String get effectivePolishPrompt =>
-      _customPrompt.isNotEmpty ? _customPrompt : defaultPolishPrompt;
+  AIProvider get provider =>
+      AIProvider.all[_providerIndex.clamp(0, AIProvider.all.length - 1)];
 
-  AIProvider get provider {
-    if (_providerIndex >= 0 && _providerIndex < AIProvider.all.length) {
-      return AIProvider.all[_providerIndex];
-    }
-    return AIProvider.all[0];
-  }
+  String get resolvedApiUrl =>
+      provider.name.contains('自定义') ? _customApiUrl : provider.apiUrl;
 
-  String get resolvedApiUrl {
-    if (provider.name == '自定义') return _customApiUrl;
-    return provider.apiUrl;
-  }
+  String get resolvedModel =>
+      provider.name.contains('自定义') ? _customModel : provider.defaultModel;
 
-  String get resolvedModel {
-    if (provider.name == '自定义') return _customModel;
-    return provider.defaultModel;
+  /// 根据风格索引返回提示词
+  String promptForStyle(int styleIdx) {
+    final style = AIWritingStyle.all[styleIdx.clamp(0, AIWritingStyle.all.length - 1)];
+    if (style.name == '自定义') return _customPrompt.isNotEmpty ? _customPrompt : AIWritingStyle.all[0].prompt;
+    return style.prompt;
   }
 }
 
-/// AI 助写服务
+// ==================== AI 服务 ====================
+
 class AIService {
   /// 对文本进行润色
-  static Future<String> polish(String text, {String mode = 'polish'}) async {
+  /// [styleIndex] 写作风格索引，null 则使用设置中的默认风格
+  static Future<String> polish(String text, {int? styleIndex}) async {
     final s = AISettings();
     if (!s.hasKey) throw Exception('请先在设置中输入 API Key');
-    if (s.resolvedApiUrl.isEmpty) throw Exception('请填写自定义 API 地址');
+    if (s.resolvedApiUrl.isEmpty) throw Exception('请填写 API 地址');
 
-    String systemPrompt;
-    if (mode == 'polish') {
-      systemPrompt = s.effectivePolishPrompt;
-    } else {
-      systemPrompt = '你是一位文字助手。请在用户输入的基础上进行适当扩写，'
-          '使内容更丰富完整，同时保持原意。直接输出结果，不要任何解释。';
-    }
-
+    final idx = styleIndex ?? s.styleIndex;
+    final systemPrompt = s.promptForStyle(idx);
     final isClaude = s.provider.name.contains('Claude');
 
     try {
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-      };
+      final headers = <String, String>{'Content-Type': 'application/json'};
       if (isClaude) {
         headers['x-api-key'] = s.apiKey;
         headers['anthropic-version'] = '2023-06-01';
@@ -136,9 +160,7 @@ class AIService {
               'model': s.resolvedModel,
               'max_tokens': 4096,
               'system': systemPrompt,
-              'messages': [
-                {'role': 'user', 'content': text},
-              ],
+              'messages': [{'role': 'user', 'content': text}],
             })
           : jsonEncode({
               'model': s.resolvedModel,
@@ -149,11 +171,7 @@ class AIService {
               ],
             });
 
-      final response = await http.post(
-        Uri.parse(s.resolvedApiUrl),
-        headers: headers,
-        body: body,
-      );
+      final response = await http.post(Uri.parse(s.resolvedApiUrl), headers: headers, body: body);
 
       if (response.statusCode == 200) {
         return isClaude ? _parseClaude(response.body) : _parseOpenAI(response.body);
@@ -162,8 +180,7 @@ class AIService {
       } else if (response.statusCode == 429) {
         throw Exception('请求太频繁，请稍后再试');
       } else {
-        final msg = _extractError(response.body) ?? '请求失败 (${response.statusCode})';
-        throw Exception(msg);
+        throw Exception(_extractError(response.body) ?? '请求失败 (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) rethrow;
@@ -187,9 +204,7 @@ class AIService {
     final content = data['content'] as List<dynamic>?;
     if (content != null && content.isNotEmpty) {
       final block = content[0] as Map<String, dynamic>;
-      if (block['type'] == 'text') {
-        return (block['text'] as String).trim();
-      }
+      if (block['type'] == 'text') return (block['text'] as String).trim();
     }
     throw Exception('AI 返回格式异常');
   }
