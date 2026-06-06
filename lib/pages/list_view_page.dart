@@ -44,6 +44,8 @@ class _ListViewPageState extends State<ListViewPage> {
 
   // 自定义分组
   String _groupBy = 'date'; // 'date' | 'project' | 'none'
+  bool _allExpanded = true; // 分组全部展开/折叠
+  int _expandVersion = 0; // 强制刷新用
 
   int get _spaceId => widget.spaceId;
 
@@ -727,6 +729,29 @@ class _ListViewPageState extends State<ListViewPage> {
                           currentGroupBy: _groupBy,
                           onSelected: (v) => setState(() => _groupBy = v),
                         ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.unfold_more, size: 18),
+                          tooltip: '全部展开',
+                          onPressed: () => setState(() {
+                            _allExpanded = true;
+                            _expandVersion++;
+                          }),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.unfold_less, size: 18),
+                          tooltip: '全部折叠',
+                          onPressed: () => setState(() {
+                            _allExpanded = false;
+                            _expandVersion++;
+                          }),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
+                        ),
                       ],
                     ),
                   ],
@@ -770,10 +795,13 @@ class _ListViewPageState extends State<ListViewPage> {
                           final key = grouped.keys.elementAt(index);
                           final entries = grouped[key]!;
                           return _GroupSection(
+                            key: ValueKey('group_${_groupBy}_$key'),
                             groupLabel: key,
                             entries: entries,
                             selectMode: _selectMode,
                             selectedIds: _selectedIds,
+                            allExpanded: _allExpanded,
+                            expandVersion: _expandVersion,
                             theme: theme,
                             onToggle: _toggleItem,
                             onDelete: (entry) async {
@@ -978,6 +1006,8 @@ class _GroupSection extends StatefulWidget {
   final List<Entry> entries;
   final bool selectMode;
   final Set<int> selectedIds;
+  final bool allExpanded;
+  final int expandVersion;
   final ThemeData theme;
   final Function(int) onToggle;
   final Function(Entry) onDelete;
@@ -985,10 +1015,13 @@ class _GroupSection extends StatefulWidget {
   final String Function(DateTime) formatDateTime;
 
   const _GroupSection({
+    super.key,
     required this.groupLabel,
     required this.entries,
     required this.selectMode,
     required this.selectedIds,
+    required this.allExpanded,
+    required this.expandVersion,
     required this.theme,
     required this.onToggle,
     required this.onDelete,
@@ -1002,6 +1035,20 @@ class _GroupSection extends StatefulWidget {
 
 class _GroupSectionState extends State<_GroupSection> {
   bool _expanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.allExpanded;
+  }
+
+  @override
+  void didUpdateWidget(_GroupSection old) {
+    super.didUpdateWidget(old);
+    if (widget.expandVersion != old.expandVersion) {
+      setState(() => _expanded = widget.allExpanded);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
