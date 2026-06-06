@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import '../database/app_database.dart';
+import '../services/seed_data.dart';
 
 /// 数据备份页面
 /// 导出全部数据为 JSON，支持分享和导入恢复
@@ -396,6 +397,72 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                         );
                       },
                     ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // 加载演示数据
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      const Text('演示数据',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '一键填充示例数据，方便体验 App 功能。\n'
+                    '包含树状标签、属性标签、项目、以及多种格式的演示记录。',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('加载演示数据'),
+                            content: const Text(
+                                '将向当前数据库中添加演示数据（标签、项目、记录等）。'
+                                '已有数据不会丢失。\n\n确定继续吗？'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('取消')),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('确定加载'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                        await SeedData.load(_db);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('演示数据加载成功！')),
+                        );
+                      },
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('加载演示数据'),
+                    ),
+                  ),
                 ],
               ),
             ),
