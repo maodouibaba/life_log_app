@@ -1,4 +1,4 @@
-﻿import 'package:excel/excel.dart';
+import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../database/app_database.dart';
@@ -8,19 +8,20 @@ class ExportService {
   final AppDatabase _db = AppDatabase();
 
   /// 导出所有记录到 Excel 文件
-  /// 返回导出文件的路径
+  /// 一条记录一行，树状标签按层级展开到多个列
   Future<String> exportToExcel({int? spaceId}) async {
     final data = await _db.getAllEntriesWithTagPaths(spaceId: spaceId);
 
-    // 第一遍扫描：找出标签路径最大层级数
+    // 第一遍扫描：找出标签路径的最大层级数
     int maxDepth = 0;
     for (final row in data) {
-      for (final tagPath in row['tags'] as List<String>) {
+      final tags = row['tags'] as List<String>;
+      for (final tagPath in tags) {
         final parts = tagPath.split(' > ');
         if (parts.length > maxDepth) maxDepth = parts.length;
       }
     }
-    if (maxDepth == 0) maxDepth = 1; // 至少有层级1列
+    if (maxDepth == 0) maxDepth = 1;
 
     final excel = Excel.createExcel();
     final sheet = excel['生活记录'];
@@ -34,36 +35,35 @@ class ExportService {
     header.add('属性标签');
     sheet.appendRow(header);
 
-    // 数据行：一个标签一行
+    // 数据行：一条记录一行，取最长标签路径填入各层级列
     for (final row in data) {
       final tags = row['tags'] as List<String>;
       final dateTimeStr = _formatDateTime(row['created_at'] as DateTime);
       final content = row['content'] as String;
       final project = row['project'] as String? ?? '';
-      final attributeTags = (row['attribute_tags'] as List<dynamic>?)?.cast<String>() ?? [];
+      final attributeTags = (row['attribute_tags'] as List<dynamic>?)
+              ?.cast<String>() ?? [];
 
-      if (tags.isEmpty) {
-        sheet.appendRow([
-          dateTimeStr,
-          content,
-          ...List.filled(maxDepth, ''),
-          project,
-          attributeTags.join('、'),
-        ]);
-      } else {
-        for (final tagPath in tags) {
-          final parts = tagPath.split(' > ');
-          final padded = List<String>.from(parts)
-            ..addAll(List.filled(maxDepth - parts.length, ''));
-          sheet.appendRow([
-            dateTimeStr,
-            content,
-            ...padded,
-            project,
-            attributeTags.join('、'),
-          ]);
+      // 找出最长的标签路径
+      List<String> deepestParts = [];
+      for (final tagPath in tags) {
+        final parts = tagPath.split(' > ');
+        if (parts.length > deepestParts.length) {
+          deepestParts = parts;
         }
       }
+
+      // 补齐到 maxDepth
+      final padded = List<String>.from(deepestParts)
+        ..addAll(List.filled(maxDepth - deepestParts.length, ''));
+
+      sheet.appendRow([
+        dateTimeStr,
+        content,
+        ...padded,
+        project,
+        attributeTags.join('、'),
+      ]);
     }
 
     // 设置列宽
@@ -90,4 +90,3 @@ class ExportService {
 
   String _pad(int n) => n.toString().padLeft(2, '0');
 }
-

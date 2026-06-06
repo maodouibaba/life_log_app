@@ -38,6 +38,8 @@ class _HomePageState extends State<HomePage> {
   bool _loading = true;
   String? _loadError;
   Space? _currentSpace;
+  bool _allDaysExpanded = true;
+  int _dayExpandVersion = 0;
 
   int get _spaceId => widget.spaceId;
 
@@ -120,6 +122,60 @@ class _HomePageState extends State<HomePage> {
 
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// 显示主题选择弹窗
+  Future<void> _showThemeDialog() async {
+    final ts = ThemeSettings();
+    int selected = ts.mode == ThemeMode.system ? 0
+        : ts.mode == ThemeMode.light ? 1 : 2;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('选择主题'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ThemeOption(
+                icon: Icons.brightness_auto,
+                label: '跟随系统',
+                selected: selected == 0,
+                onTap: () => setDialogState(() => selected = 0),
+              ),
+              _ThemeOption(
+                icon: Icons.light_mode,
+                label: '日间模式',
+                selected: selected == 1,
+                onTap: () => setDialogState(() => selected = 1),
+              ),
+              _ThemeOption(
+                icon: Icons.dark_mode,
+                label: '夜间模式',
+                selected: selected == 2,
+                onTap: () => setDialogState(() => selected = 2),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                final mode = selected == 0 ? ThemeMode.system
+                    : selected == 1 ? ThemeMode.light : ThemeMode.dark;
+                ts.setMode(mode);
+                Navigator.pop(ctx);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 显示 AI 助写设置弹窗
@@ -398,6 +454,24 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         actions: [
+          if (_entries.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.unfold_more),
+              tooltip: '全部展开',
+              onPressed: () => setState(() {
+                _allDaysExpanded = true;
+                _dayExpandVersion++;
+              }),
+            ),
+            IconButton(
+              icon: const Icon(Icons.unfold_less),
+              tooltip: '全部折叠',
+              onPressed: () => setState(() {
+                _allDaysExpanded = false;
+                _dayExpandVersion++;
+              }),
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.list_alt),
             tooltip: '列表视图',
@@ -472,12 +546,8 @@ class _HomePageState extends State<HomePage> {
                   await _showAISettings();
                   break;
                 case 'theme':
-                  ThemeSettings().nextMode();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已切换为${ThemeSettings().label}')),
-                    );
-                  }
+                  if (!context.mounted) return;
+                  await _showThemeDialog();
                   break;
               }
             },
@@ -587,8 +657,11 @@ class _HomePageState extends State<HomePage> {
                           final dateKey = grouped.keys.elementAt(index);
                           final dayEntries = grouped[dateKey]!;
                           return _DayGroup(
+                            key: ValueKey('day_$dateKey'),
                             dateLabel: _formatDateKey(dateKey),
                             entries: dayEntries,
+                            allExpanded: _allDaysExpanded,
+                            expandVersion: _dayExpandVersion,
                             formatTime: _formatTime,
                             onTap: (entry) async {
                               final result = await Navigator.push<Object>(
@@ -704,13 +777,18 @@ class _HomePageState extends State<HomePage> {
 class _DayGroup extends StatefulWidget {
   final String dateLabel;
   final List<Entry> entries;
+  final bool allExpanded;
+  final int expandVersion;
   final String Function(DateTime) formatTime;
   final Function(Entry) onTap;
   final Function(Entry) onDelete;
 
   const _DayGroup({
+    super.key,
     required this.dateLabel,
     required this.entries,
+    required this.allExpanded,
+    required this.expandVersion,
     required this.formatTime,
     required this.onTap,
     required this.onDelete,
@@ -722,6 +800,20 @@ class _DayGroup extends StatefulWidget {
 
 class _DayGroupState extends State<_DayGroup> {
   bool _expanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.allExpanded;
+  }
+
+  @override
+  void didUpdateWidget(_DayGroup old) {
+    super.didUpdateWidget(old);
+    if (widget.expandVersion != old.expandVersion) {
+      setState(() => _expanded = widget.allExpanded);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -967,6 +1059,59 @@ class _EntryCard extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 主题选择选项组件
+class _ThemeOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeOption({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
+                : null,
+            borderRadius: BorderRadius.circular(8),
+            border: selected
+                ? Border.all(color: theme.colorScheme.primary)
+                : null,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 20,
+                  color: selected ? theme.colorScheme.primary : null),
+              const SizedBox(width: 12),
+              Text(label,
+                  style: TextStyle(
+                      fontWeight: selected ? FontWeight.w600 : null)),
+              const Spacer(),
+              if (selected)
+                Icon(Icons.check_circle,
+                    size: 18, color: theme.colorScheme.primary),
+            ],
+          ),
+        ),
       ),
     );
   }

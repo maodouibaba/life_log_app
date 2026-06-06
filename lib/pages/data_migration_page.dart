@@ -118,7 +118,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   /// 从 iPhone「文件」App 选择备份文件导入
   Future<void> _importFromFilePicker() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );

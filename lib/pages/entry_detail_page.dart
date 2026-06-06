@@ -4,7 +4,7 @@ import '../database/app_database.dart';
 import '../utils/text_formatter.dart';
 import 'entry_editor_page.dart';
 
-/// 记录详情页（只读）
+/// 记录详情页（卡片式布局）
 class EntryDetailPage extends StatelessWidget {
   final Entry entry;
 
@@ -25,7 +25,8 @@ class EntryDetailPage extends StatelessWidget {
               final db = AppDatabase();
               final fresh = await db.getEntry(entry.id!);
               if (!context.mounted) return;
-              final _ = await Navigator.pushReplacement(
+              // 用 push 而非 pushReplacement，让编辑结果正确回传到列表页
+              final result = await Navigator.push<Object>(
                 context,
                 MaterialPageRoute(
                   builder: (_) => EntryEditorPage(
@@ -34,136 +35,191 @@ class EntryDetailPage extends StatelessWidget {
                   ),
                 ),
               );
-              // 编辑结果由 home_page（调用方）接收并处理撤销
-              // result 通过 pushReplacement 透传回调用方
+              if (result == 'edit' && context.mounted) {
+                Navigator.pop(context, 'edit');
+              }
             },
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 时间
-            Row(
-              children: [
-                Icon(Icons.access_time,
-                    size: 16, color: theme.colorScheme.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text(
-                  _formatFullDateTime(entry.createdAt),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+            // ---- 卡片 1：时间 + 项目 + 标签 ----
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 时间
+                    Row(
+                      children: [
+                        Icon(Icons.access_time,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatFullDateTime(entry.createdAt),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // 项目
+                    if (entry.projectName != null) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Icon(Icons.folder_outlined,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              entry.projectName!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    // 树状标签
+                    if (entry.tags.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: entry.tags.map((tag) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              tag.name,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    theme.colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+
+                    // 属性标签
+                    if (entry.attributeTags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: entry.attributeTags.map((at) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              at.name,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
             ),
 
-            // 事项简介
-            if (entry.title != null && entry.title!.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                entry.title!,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+            // ---- 卡片 2：事项简介 ----
+            if (entry.title != null && entry.title!.isNotEmpty)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.short_text,
+                          size: 18, color: theme.colorScheme.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          entry.title!,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
 
-            const SizedBox(height: 16),
-
-            // 项目
-            if (entry.projectName != null) ...[
-              Row(
-                children: [
-                  Icon(Icons.folder_outlined,
-                      size: 16, color: theme.colorScheme.primary),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(6),
+            // ---- 卡片 3：详细情况 ----
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.subject,
+                            size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          '详细情况',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Text(
-                      entry.projectName!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
+                    const SizedBox(height: 12),
+                    ...TextFormatter.render(
+                      entry.content,
+                      baseStyle: const TextStyle(fontSize: 15),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ],
-
-            // 树状标签
-            if (entry.tags.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: entry.tags.map((tag) {
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      tag.name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSecondaryContainer,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-
-            // 属性标签
-            if (entry.attributeTags.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: entry.attributeTags.map((at) {
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
-                      ),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      at.name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 16),
-
-            // 详细情况（支持列表、粗体、斜体等格式）
-            ...TextFormatter.render(
-              entry.content,
-              baseStyle: const TextStyle(fontSize: 16),
             ),
           ],
         ),
