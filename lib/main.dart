@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/space_selector_page.dart';
+import 'pages/lock_screen.dart';
 import 'database/app_database.dart';
 import 'services/theme_settings.dart';
 
@@ -71,7 +72,7 @@ class _LifeLogAppState extends State<LifeLogApp> {
         ),
       ),
       themeMode: ThemeSettings().mode,
-      home: const _AppEntry(),
+      home: LockScreen(child: const _AppEntry()),
     );
   }
 }

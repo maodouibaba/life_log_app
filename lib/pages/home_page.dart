@@ -14,6 +14,7 @@ import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
 import '../services/theme_settings.dart';
+import '../services/privacy_settings.dart';
 import '../utils/text_formatter.dart';
 
 /// 首页时间线
@@ -176,6 +177,112 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  /// 显示隐私设置弹窗
+  Future<void> _showPrivacyDialog() async {
+    final ps = PrivacySettings();
+    bool enabled = ps.enabled;
+    bool useBio = ps.useBiometric;
+    final pwdController = TextEditingController(text: ps.password);
+    String? error;
+    bool canBio = await PrivacySettings.canUseBiometric();
+
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.lock_outline,
+                  color: Theme.of(ctx).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('隐私锁设置'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '开启后，启动 App 或从后台切回时需验证身份。',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('启用隐私锁'),
+                  subtitle: Text(
+                    enabled ? '应用启动和后台切换时锁定' : '不锁定',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  value: enabled,
+                  onChanged: (v) => setDialogState(() => enabled = v),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+                if (enabled) ...[
+                  if (canBio)
+                    SwitchListTile(
+                      title: const Text('使用面容/指纹解锁'),
+                      subtitle: Text(
+                        useBio ? '优先使用生物识别' : '仅使用密码',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: useBio,
+                      onChanged: (v) => setDialogState(() => useBio = v),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  const SizedBox(height: 12),
+                  const Text('解锁密码',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: pwdController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: '设置 4-6 位密码',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      errorText: error,
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                    maxLength: 6,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (enabled) {
+                  final pwd = pwdController.text.trim();
+                  if (pwd.isNotEmpty && pwd.length < 4) {
+                    setDialogState(() => error = '密码至少 4 位');
+                    return;
+                  }
+                  ps.password = pwd;
+                }
+                ps.enabled = enabled;
+                ps.useBiometric = useBio;
+                if (enabled) ps.authenticated = true;
+                Navigator.pop(ctx);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    pwdController.dispose();
   }
 
   /// 显示 AI 助写设置弹窗
@@ -531,6 +638,10 @@ class _HomePageState extends State<HomePage> {
                   if (!context.mounted) return;
                   await _showThemeDialog();
                   break;
+                case 'privacy':
+                  if (!context.mounted) return;
+                  await _showPrivacyDialog();
+                  break;
               }
             },
             itemBuilder: (context) => [
@@ -575,6 +686,17 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(ThemeSettings().icon),
                   title: Text('主题：${ThemeSettings().label}'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'privacy',
+                child: ListTile(
+                  leading: Icon(PrivacySettings().enabled
+                      ? Icons.lock
+                      : Icons.lock_open_outlined),
+                  title: Text(PrivacySettings().enabled ? '隐私锁：已开启' : '隐私锁：已关闭'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
