@@ -716,28 +716,36 @@ class AppDatabase {
     }
   }
 
-  /// 获取某条记录的树状标签
+  /// 获取某条记录的树状标签（两步查询，网络兼容）
   Future<List<Tag>> _getTagsForEntry(int entryId) async {
     final db = await database;
-    final maps = await db.rawQuery('''
-      SELECT t.* FROM tags t
-      INNER JOIN entry_tags et ON t.id = et.tag_id
-      WHERE et.entry_id = ?
-      ORDER BY t.sort_order ASC, t.id ASC
-    ''', [entryId]);
-    return maps.map((map) => Tag.fromMap(map)).toList();
+    // 1. 查关联表获取标签 ID
+    final etMaps = await db.query('entry_tags',
+        where: 'entry_id = ?', whereArgs: [entryId]);
+    if (etMaps.isEmpty) return [];
+    final tagIds = etMaps.map((m) => m['tag_id'] as int).toList();
+    // 2. 根据 ID 查标签
+    final ph = tagIds.map((_) => '?').join(',');
+    return (await db.query('tags',
+        where: 'id IN ($ph)', whereArgs: tagIds,
+        orderBy: 'sort_order ASC, id ASC'))
+        .map((map) => Tag.fromMap(map)).toList();
   }
 
-  /// 获取某条记录的属性标签
+  /// 获取某条记录的属性标签（两步查询，网络兼容）
   Future<List<AttributeTag>> _getAttributeTagsForEntry(int entryId) async {
     final db = await database;
-    final maps = await db.rawQuery('''
-      SELECT at.* FROM attribute_tags at
-      INNER JOIN entry_attribute_tags eat ON at.id = eat.attribute_tag_id
-      WHERE eat.entry_id = ?
-      ORDER BY at.id ASC
-    ''', [entryId]);
-    return maps.map((map) => AttributeTag.fromMap(map)).toList();
+    // 1. 查关联表获取属性标签 ID
+    final eatMaps = await db.query('entry_attribute_tags',
+        where: 'entry_id = ?', whereArgs: [entryId]);
+    if (eatMaps.isEmpty) return [];
+    final atIds = eatMaps.map((m) => m['attribute_tag_id'] as int).toList();
+    // 2. 根据 ID 查属性标签
+    final ph = atIds.map((_) => '?').join(',');
+    return (await db.query('attribute_tags',
+        where: 'id IN ($ph)', whereArgs: atIds,
+        orderBy: 'id ASC'))
+        .map((map) => AttributeTag.fromMap(map)).toList();
   }
 
   /// 获取所有记录（按时间倒序）

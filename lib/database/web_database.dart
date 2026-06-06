@@ -88,11 +88,10 @@ class WebDatabase implements Database {
   @override
   Future<List<Map<String, Object?>>> rawQuery(
       String sql, [List<Object?>? arguments]) async {
-    // 简化的 SQL 解析
     final fromMatch =
         RegExp(r'FROM\s+(\w+)', caseSensitive: false).firstMatch(sql);
     if (fromMatch == null) return [];
-    final table = fromMatch.group(1)!;
+    final mainTable = fromMatch.group(1)!;
     final tableAlias =
         RegExp(r'FROM\s+\w+\s+(\w+)', caseSensitive: false).firstMatch(sql)?.group(1);
 
@@ -100,9 +99,49 @@ class WebDatabase implements Database {
     var whereClause = _extractWhere(sql, arguments, tableAlias);
     final orderBy = _extractOrderBy(sql, tableAlias);
 
-    final rows = await query(table, where: whereClause, orderBy: orderBy);
+    // ---- JOIN 处理 ----
+    // 解析 INNER JOIN ... ON ... 模式
+    final joinMatch = RegExp(
+        r'INNER\s+JOIN\s+(\w+)\s+(\w+)\s+ON\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)',
+        caseSensitive: false).firstMatch(sql);
 
-    // 处理 JOIN project_name
+    if (joinMatch != null) {
+      final joinTable = joinMatch.group(1)!;      // 关联表名 e.g. entry_tags
+      final joinAlias = joinMatch.group(2)!;        // 关联表别名 e.g. et
+      final mainCol = joinMatch.group(4)!;          // 主表连接列 e.g. id
+      final joinCol = joinMatch.group(6)!;           // 关联表连接列 e.g. tag_id
+
+      // 改造 WHERE：去掉关联表别名，只保留关联表的条件
+      var joinWhere = whereClause ?? '';
+      if (joinAlias.isNotEmpty) {
+        joinWhere = joinWhere.replaceAll('$joinAlias.', '');
+      }
+
+      // 先查关联表（如 entry_tags）获取主表 ID 列表
+      final joinRows = await query(joinTable,
+          where: joinWhere.isNotEmpty ? joinWhere : null,
+          whereArgs: null);
+
+      if (joinRows.isEmpty) return [];
+
+      final mainIds = joinRows
+          .map((r) => r[joinCol])
+          .where((id) => id != null)
+          .toSet();
+
+      if (mainIds.isEmpty) return [];
+
+      // 再查主表，用 ID 列表过滤
+      final idList = mainIds.map((id) => id.toString()).join(',');
+      return query(mainTable,
+          where: '$mainCol IN ($idList)',
+          orderBy: orderBy);
+    }
+
+    // ---- 无 JOIN 的简单查询 ----
+    final rows = await query(mainTable, where: whereClause, orderBy: orderBy);
+
+    // 处理 LEFT JOIN project_name
     if (sql.toUpperCase().contains('PROJECT_NAME')) {
       for (final row in rows) {
         final pid = row['project_id'];
