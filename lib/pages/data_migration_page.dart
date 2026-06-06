@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../database/app_database.dart';
 import '../services/seed_data.dart';
 
@@ -110,6 +111,27 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                 child: const Text('确定')),
           ],
         ),
+      );
+    }
+  }
+
+  /// 从 iPhone「文件」App 选择备份文件导入
+  Future<void> _importFromFilePicker() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final filePath = result.files.single.path;
+      if (filePath == null) return;
+
+      await _importFromFile(filePath);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('选择文件失败：$e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -299,6 +321,29 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // ---- 从 iPhone 文件 App 选择 ----
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _importFromFilePicker,
+                      icon: const Icon(Icons.folder_open_outlined),
+                      label: const Text('从 iPhone「文件」App 选择'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('或扫描文档目录', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
 
                   // ---- 自定义扫描路径 ----
                   Row(

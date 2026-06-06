@@ -13,6 +13,7 @@ import 'data_migration_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
+import '../services/theme_settings.dart';
 import '../utils/text_formatter.dart';
 
 /// 首页时间线
@@ -470,6 +471,14 @@ class _HomePageState extends State<HomePage> {
                   if (!context.mounted) return;
                   await _showAISettings();
                   break;
+                case 'theme':
+                  ThemeSettings().nextMode();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('已切换为${ThemeSettings().label}')),
+                    );
+                  }
+                  break;
               }
             },
             itemBuilder: (context) => [
@@ -505,6 +514,15 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.auto_awesome),
                   title: Text('AI 助写设置'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'theme',
+                child: ListTile(
+                  leading: Icon(ThemeSettings().icon),
+                  title: Text('主题：${ThemeSettings().label}'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

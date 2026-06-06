@@ -143,7 +143,11 @@ class AIService {
     if (s.resolvedApiUrl.isEmpty) throw Exception('请填写 API 地址');
 
     final idx = styleIndex ?? s.styleIndex;
-    final systemPrompt = s.promptForStyle(idx);
+    // 基本风格提示词 + 通用长度约束：输出长度不超过原文的 120%
+    final basePrompt = s.promptForStyle(idx);
+    final lengthRule = '重要：输出文本的长度不要超过用户输入原文长度的 120%（字数）。'
+        '用户原文长度：${text.length} 字。请严格控制输出长度。';
+    final systemPrompt = '$basePrompt\n\n$lengthRule';
     final isClaude = s.provider.name.contains('Claude');
 
     try {

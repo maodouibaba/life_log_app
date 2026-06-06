@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/space_selector_page.dart';
 import 'database/app_database.dart';
+import 'services/theme_settings.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,8 +19,27 @@ void main() async {
   runApp(const LifeLogApp());
 }
 
-class LifeLogApp extends StatelessWidget {
+class LifeLogApp extends StatefulWidget {
   const LifeLogApp({super.key});
+
+  @override
+  State<LifeLogApp> createState() => _LifeLogAppState();
+}
+
+class _LifeLogAppState extends State<LifeLogApp> {
+  @override
+  void initState() {
+    super.initState();
+    ThemeSettings().addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    ThemeSettings().removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +64,7 @@ class LifeLogApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeSettings().mode,
       home: const _AppEntry(),
     );
   }
