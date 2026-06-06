@@ -863,6 +863,19 @@ class AppDatabase {
     DateTime? endDate,
     String? keyword,
   }) async {
+    // Web 平台：用多步查询替代复杂 SQL，避免 EXISTS 子查询不支持的问题
+    if (_isWeb) {
+      return _getEntriesByFiltersWeb(
+        spaceId: spaceId,
+        tagIds: tagIds,
+        attributeTagIds: attributeTagIds,
+        projectIds: projectIds,
+        startDate: startDate,
+        endDate: endDate,
+        keyword: keyword,
+      );
+    }
+
     final db = await database;
     final conditions = <String>[];
     final args = <Object?>[];
@@ -924,6 +937,65 @@ class AppDatabase {
 
     final entries = maps.map((map) => Entry.fromMap(map)).toList();
     await _enrichEntries(entries);
+    return entries;
+  }
+
+  /// Web 平台筛选：多步查询 + Dart 内存过滤
+  Future<List<Entry>> _getEntriesByFiltersWeb({
+    int? spaceId,
+    Set<int>? tagIds,
+    Set<int>? attributeTagIds,
+    Set<int>? projectIds,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? keyword,
+  }) async {
+    // 1. 先获取该空间下所有记录
+    var entries = await getAllEntries(spaceId: spaceId);
+
+    // 2. 内存过滤
+    if (tagIds != null && tagIds.isNotEmpty) {
+      // 获取所有匹配的记录 ID
+      final db = await database;
+      final ph = tagIds.map((_) => '?').join(',');
+      final etMaps = await db.query('entry_tags',
+          where: 'tag_id IN ($ph)', whereArgs: tagIds.toList());
+      final matchingEntryIds = etMaps.map((m) => m['entry_id'] as int).toSet();
+      entries = entries.where((e) => matchingEntryIds.contains(e.id)).toList();
+    }
+
+    if (attributeTagIds != null && attributeTagIds.isNotEmpty) {
+      final db = await database;
+      final ph = attributeTagIds.map((_) => '?').join(',');
+      final eatMaps = await db.query('entry_attribute_tags',
+          where: 'attribute_tag_id IN ($ph)', whereArgs: attributeTagIds.toList());
+      final matchingEntryIds = eatMaps.map((m) => m['entry_id'] as int).toSet();
+      entries = entries.where((e) => matchingEntryIds.contains(e.id)).toList();
+    }
+
+    if (projectIds != null && projectIds.isNotEmpty) {
+      entries = entries.where((e) => projectIds.contains(e.projectId)).toList();
+    }
+
+    if (startDate != null && endDate != null) {
+      entries = entries.where((e) =>
+          e.createdAt.isAfter(startDate.subtract(const Duration(seconds: 1))) &&
+          e.createdAt.isBefore(endDate.add(const Duration(days: 1)))).toList();
+    }
+
+    if (keyword != null && keyword.isNotEmpty) {
+      final kw = keyword.toLowerCase();
+      entries = entries.where((e) {
+        if (e.title?.toLowerCase().contains(kw) == true) return true;
+        if (e.content.toLowerCase().contains(kw)) return true;
+        if (e.tags.any((t) => t.name.toLowerCase().contains(kw))) return true;
+        if (e.attributeTags.any((at) => at.name.toLowerCase().contains(kw))) return true;
+        return false;
+      }).toList();
+    }
+
+    // 按时间倒序
+    entries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return entries;
   }
 

@@ -270,11 +270,33 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '将备份的 .json 文件放入 App 的文档目录（可通过爱思助手"文件共享"操作），'
-                    '然后在下方选择要恢复的备份文件。恢复后会替换全部现有数据。',
+                    '将备份的 .json 文件放入 App 的文档目录，然后点击刷新扫描。',
                     style: TextStyle(
                         fontSize: 13,
                         color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 14,
+                            color: theme.colorScheme.secondary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'iPhone 用爱思助手 → 文件共享 → 生活记录 → Documents → 放入 .json 文件',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSecondaryContainer),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -298,10 +320,12 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, size: 20),
-                        tooltip: '扫描此路径',
-                        onPressed: _rescan,
+                      Tooltip(
+                        message: '扫描此路径下的 .json 备份文件',
+                        child: IconButton(
+                          icon: const Icon(Icons.refresh, size: 20),
+                          onPressed: _rescan,
+                        ),
                       ),
                     ],
                   ),
