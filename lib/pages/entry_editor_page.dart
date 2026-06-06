@@ -8,6 +8,7 @@ import '../models/project_group.dart';
 import '../database/app_database.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
+import '../utils/text_formatter.dart';
 
 /// 新增/编辑记录页面
 /// 标题 + 内容双字段，通过独立弹窗选择树状标签、属性标签、项目
@@ -602,7 +603,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: _contentController.text.isNotEmpty
-                    ? Text(_contentController.text,
+                    ? Text(TextFormatter.stripMarkdown(_contentController.text),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 15))

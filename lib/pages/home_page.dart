@@ -13,6 +13,7 @@ import 'data_migration_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
+import '../utils/text_formatter.dart';
 
 /// 首页时间线
 /// 展示当前入口下的所有记录，按天分组
@@ -822,9 +823,9 @@ class _EntryCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    // 内容截断（最多2行）
+                    // 内容截断（最多2行，去除格式符号）
                     Text(
-                      entry.content,
+                      TextFormatter.stripMarkdown(entry.content),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

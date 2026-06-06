@@ -5,6 +5,7 @@ import '../models/tag.dart';
 import '../models/project.dart';
 import '../models/attribute_tag.dart';
 import '../services/undo_manager.dart';
+import '../utils/text_formatter.dart';
 import 'entry_detail_page.dart';
 
 /// 列表视图页面
@@ -1068,7 +1069,7 @@ class _GroupSectionState extends State<_GroupSection> {
 
           return ListTile(
             title: Text(
-              entry.title ?? entry.content,
+              entry.title ?? TextFormatter.stripMarkdown(entry.content),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

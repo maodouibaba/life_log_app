@@ -152,4 +152,15 @@ class TextFormatter {
       ),
     );
   }
+
+  /// 去除 markdown 符号，返回纯文本（用于预览截断）
+  static String stripMarkdown(String text) {
+    if (text.isEmpty) return text;
+    return text
+        .replaceAllMapped(RegExp(r'\*\*(.+?)\*\*'), (m) => m[1]!)
+        .replaceAllMapped(RegExp(r'\*(.+?)\*'), (m) => m[1]!)
+        .replaceAll(RegExp(r'^#+\s+', multiLine: true), '')
+        .replaceAll(RegExp(r'^[-\*]\s+', multiLine: true), '')
+        .replaceAll(RegExp(r'^\d+\.\s+', multiLine: true), '');
+  }
 }

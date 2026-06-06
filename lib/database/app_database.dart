@@ -659,9 +659,10 @@ class AppDatabase {
       List<int>? tagIds,
       List<int>? attributeTagIds,
       int? projectId,
-      int? spaceId}) async {
+      int? spaceId,
+      DateTime? createdAt}) async {
     final db = await database;
-    final now = DateTime.now();
+    final now = createdAt ?? DateTime.now();
     final entry = Entry(
       title: title,
       content: content,
