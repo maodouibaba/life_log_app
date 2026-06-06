@@ -12,6 +12,7 @@ import 'list_view_page.dart';
 import 'data_migration_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
+import '../services/ai_service.dart';
 
 /// 首页时间线
 /// 展示当前入口下的所有记录，按天分组
@@ -117,6 +118,104 @@ class _HomePageState extends State<HomePage> {
 
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// 显示 AI 助写设置弹窗
+  Future<void> _showAISettings() async {
+    final settings = AISettings();
+    final keyController = TextEditingController(text: settings.apiKey);
+    bool enabled = settings.enabled;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.auto_awesome,
+                  color: Theme.of(ctx).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('AI 助写设置'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '开启后，在输入事项简介和详细情况时，'
+                '可使用 AI 对文本进行润色整理。',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              // 开关
+              SwitchListTile(
+                title: const Text('启用 AI 助写'),
+                subtitle: Text(
+                  enabled ? '输入框将显示 AI 润色按钮' : 'AI 功能已关闭',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                value: enabled,
+                onChanged: (v) => setDialogState(() => enabled = v),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+              if (enabled) ...[
+                const SizedBox(height: 12),
+                const Text('API Key (Claude)',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: keyController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    hintText: 'sk-ant-...',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.visibility_off, size: 18),
+                      onPressed: () {},
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '需要 Anthropic Claude API Key，可从 '
+                  'console.anthropic.com 获取',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                settings.apiKey = keyController.text.trim();
+                settings.enabled = enabled;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(
+                      enabled && settings.hasKey
+                          ? 'AI 助写已启用'
+                          : enabled
+                              ? '请填写 API Key'
+                              : 'AI 助写已关闭')),
+                );
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    keyController.dispose();
   }
 
   Future<void> _exportToExcel() async {
@@ -230,6 +329,10 @@ class _HomePageState extends State<HomePage> {
                 case 'switch_space':
                   widget.onSwitchSpace();
                   break;
+                case 'ai_settings':
+                  if (!context.mounted) return;
+                  await _showAISettings();
+                  break;
               }
             },
             itemBuilder: (context) => [
@@ -256,6 +359,15 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.swap_horiz),
                   title: Text('切换入口'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'ai_settings',
+                child: ListTile(
+                  leading: Icon(Icons.auto_awesome),
+                  title: Text('AI 助写设置'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

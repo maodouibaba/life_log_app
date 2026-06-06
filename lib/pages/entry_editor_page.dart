@@ -7,6 +7,7 @@ import '../models/attribute_tag_group.dart';
 import '../models/project_group.dart';
 import '../database/app_database.dart';
 import '../services/undo_manager.dart';
+import '../services/ai_service.dart';
 
 /// 新增/编辑记录页面
 /// 标题 + 内容双字段，通过独立弹窗选择树状标签、属性标签、项目
@@ -223,7 +224,13 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('事项简介'),
+        title: Row(
+          children: [
+            const Expanded(child: Text('事项简介')),
+            if (AISettings().enabled && AISettings().hasKey)
+              _AIBtn(controller: controller),
+          ],
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: TextField(
@@ -319,6 +326,14 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                       tooltip: '标题 (#)',
                       onTap: () => _insertFormatting(controller, '# ', ''),
                     ),
+                    if (AISettings().enabled && AISettings().hasKey) ...[
+                      const SizedBox(width: 4),
+                      Container(width: 1, height: 18, color: Theme.of(ctx).colorScheme.outlineVariant),
+                      const SizedBox(width: 4),
+                      _AIBtn(
+                        controller: controller,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1417,6 +1432,58 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
           child: const Text('确定'),
         ),
       ],
+    );
+  }
+}
+
+/// AI 润色按钮
+class _AIBtn extends StatefulWidget {
+  final TextEditingController controller;
+
+  const _AIBtn({required this.controller});
+
+  @override
+  State<_AIBtn> createState() => _AIBtnState();
+}
+
+class _AIBtnState extends State<_AIBtn> {
+  bool _loading = false;
+
+  Future<void> _doPolish() async {
+    final text = widget.controller.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _loading = true);
+    try {
+      final result = await AIService.polish(text);
+      if (mounted) {
+        widget.controller.text = result;
+        widget.controller.selection = TextSelection.collapsed(offset: result.length);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: _loading ? null : _doPolish,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        child: _loading
+            ? const SizedBox(
+                width: 18, height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : Icon(Icons.auto_awesome, size: 18, color: Theme.of(context).colorScheme.primary),
+      ),
     );
   }
 }
