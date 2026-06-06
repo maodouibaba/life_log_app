@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../database/app_database.dart';
 
 /// 主题设置（单例）
 class ThemeSettings {
@@ -11,15 +12,18 @@ class ThemeSettings {
 
   void setMode(ThemeMode mode) {
     _mode = mode;
+    final v = mode == ThemeMode.system ? 'system'
+        : mode == ThemeMode.light ? 'light' : 'dark';
+    _ThemeDbProvider().set('theme_mode', v);
     _notifyListeners();
   }
 
-  void nextMode() {
-    switch (_mode) {
-      case ThemeMode.system: setMode(ThemeMode.light); break;
-      case ThemeMode.light: setMode(ThemeMode.dark); break;
-      case ThemeMode.dark: setMode(ThemeMode.system); break;
-    }
+  /// 从数据库加载设置
+  Future<void> load() async {
+    final v = await _ThemeDbProvider().get('theme_mode');
+    if (v == 'light') _mode = ThemeMode.light;
+    else if (v == 'dark') _mode = ThemeMode.dark;
+    else _mode = ThemeMode.system;
   }
 
   String get label {
@@ -38,11 +42,16 @@ class ThemeSettings {
     }
   }
 
-  // 简单监听机制
   final List<VoidCallback> _listeners = [];
   void addListener(VoidCallback cb) => _listeners.add(cb);
   void removeListener(VoidCallback cb) => _listeners.remove(cb);
   void _notifyListeners() {
     for (final cb in _listeners) { cb(); }
   }
+}
+
+class _ThemeDbProvider {
+  final AppDatabase _db = AppDatabase();
+  Future<String?> get(String key) async { try { return await _db.getSetting(key); } catch (_) { return null; } }
+  Future<void> set(String key, String value) async { try { await _db.setSetting(key, value); } catch (_) {} }
 }

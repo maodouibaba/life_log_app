@@ -4,6 +4,8 @@ import 'pages/space_selector_page.dart';
 import 'pages/lock_screen.dart';
 import 'database/app_database.dart';
 import 'services/theme_settings.dart';
+import 'services/ai_service.dart';
+import 'services/privacy_settings.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +17,18 @@ void main() async {
     debugPrint('数据库初始化成功');
   } catch (e) {
     debugPrint('数据库初始化失败：$e');
+  }
+
+  // 加载持久化设置
+  try {
+    await Future.wait([
+      AISettings().load(),
+      PrivacySettings().load(),
+      ThemeSettings().load(),
+    ]);
+    debugPrint('设置加载完成');
+  } catch (e) {
+    debugPrint('设置加载失败：$e');
   }
 
   runApp(const LifeLogApp());

@@ -132,7 +132,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -256,6 +256,14 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_project_groups_space_id ON project_groups(space_id)');
     await db.execute('CREATE INDEX idx_attribute_tag_groups_space_id ON attribute_tag_groups(space_id)');
 
+    // 设置表
+    await db.execute('''
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+
     // 创建默认入口
     await db.insert('spaces', {
       'name': '默认',
@@ -358,6 +366,40 @@ class AppDatabase {
         });
       }
     }
+
+    // v3 → v4：设置表
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      ''');
+    }
+  }
+
+  // ==================== 设置持久化 ====================
+
+  /// 读取设置值
+  Future<String?> getSetting(String key) async {
+    final db = await database;
+    final maps = await db.query('settings',
+        where: 'key = ?', whereArgs: [key]);
+    if (maps.isEmpty) return null;
+    return maps.first['value'] as String?;
+  }
+
+  /// 写入设置值
+  Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert('settings', {'key': key, 'value': value},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 删除设置
+  Future<void> removeSetting(String key) async {
+    final db = await database;
+    await db.delete('settings', where: 'key = ?', whereArgs: [key]);
   }
 
   // ==================== 入口/空间操作 ====================

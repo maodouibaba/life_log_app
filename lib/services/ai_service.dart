@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:http/http.dart' show post;
+import '../database/app_database.dart';
 
 // ==================== AI 供应商 ====================
 
@@ -94,7 +95,7 @@ class AISettings {
   int _providerIndex = 0;
   String _customApiUrl = '';
   String _customModel = '';
-  int _styleIndex = 0; // 默认"用户原文风格"
+  int _styleIndex = 0;
   String _customPrompt = '';
 
   String get apiKey => _apiKey;
@@ -105,13 +106,29 @@ class AISettings {
   int get styleIndex => _styleIndex;
   String get customPrompt => _customPrompt;
 
-  set apiKey(String key) => _apiKey = key;
-  set enabled(bool v) => _enabled = v;
-  set providerIndex(int v) => _providerIndex = v;
-  set customApiUrl(String v) => _customApiUrl = v;
-  set customModel(String v) => _customModel = v;
-  set styleIndex(int v) => _styleIndex = v;
-  set customPrompt(String v) => _customPrompt = v;
+  set apiKey(String key) { _apiKey = key; _save('ai_api_key', key); }
+  set enabled(bool v) { _enabled = v; _save('ai_enabled', v ? '1' : '0'); }
+  set providerIndex(int v) { _providerIndex = v; _save('ai_provider', v.toString()); }
+  set customApiUrl(String v) { _customApiUrl = v; _save('ai_custom_url', v); }
+  set customModel(String v) { _customModel = v; _save('ai_custom_model', v); }
+  set styleIndex(int v) { _styleIndex = v; _save('ai_style', v.toString()); }
+  set customPrompt(String v) { _customPrompt = v; _save('ai_custom_prompt', v); }
+
+  /// 从数据库加载设置
+  Future<void> load() async {
+    final db = _AppDatabaseProvider();
+    _apiKey = await db.get('ai_api_key') ?? '';
+    _enabled = (await db.get('ai_enabled')) != '0';
+    _providerIndex = int.tryParse(await db.get('ai_provider') ?? '') ?? 0;
+    _customApiUrl = await db.get('ai_custom_url') ?? '';
+    _customModel = await db.get('ai_custom_model') ?? '';
+    _styleIndex = int.tryParse(await db.get('ai_style') ?? '') ?? 0;
+    _customPrompt = await db.get('ai_custom_prompt') ?? '';
+  }
+
+  void _save(String key, String value) {
+    _AppDatabaseProvider().set(key, value);
+  }
 
   bool get hasKey => _apiKey.isNotEmpty;
 
@@ -175,7 +192,7 @@ class AIService {
               ],
             });
 
-      final response = await http.post(Uri.parse(s.resolvedApiUrl), headers: headers, body: body);
+      final response = await post(Uri.parse(s.resolvedApiUrl), headers: headers, body: body);
 
       if (response.statusCode == 200) {
         return isClaude ? _parseClaude(response.body) : _parseOpenAI(response.body);
@@ -222,5 +239,18 @@ class AIService {
     } catch (_) {
       return null;
     }
+  }
+}
+
+/// 数据库设置持久化辅助
+class _AppDatabaseProvider {
+  final AppDatabase _db = AppDatabase();
+
+  Future<String?> get(String key) async {
+    try { return await _db.getSetting(key); } catch (_) { return null; }
+  }
+
+  Future<void> set(String key, String value) async {
+    try { await _db.setSetting(key, value); } catch (_) {}
   }
 }

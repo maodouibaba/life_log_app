@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
+import '../database/app_database.dart';
 
 /// 隐私设置（单例）
 class PrivacySettings {
@@ -10,17 +11,27 @@ class PrivacySettings {
   bool _enabled = false;
   bool _useBiometric = true;
   String _password = '';
-  bool _authenticated = false; // 当前会话是否已验证
+  bool _authenticated = false;
 
   bool get enabled => _enabled;
   bool get useBiometric => _useBiometric;
   String get password => _password;
   bool get authenticated => _authenticated;
 
-  set enabled(bool v) => _enabled = v;
-  set useBiometric(bool v) => _useBiometric = v;
-  set password(String v) => _password = v;
+  set enabled(bool v) { _enabled = v; _save('privacy_enabled', v ? '1' : '0'); }
+  set useBiometric(bool v) { _useBiometric = v; _save('privacy_biometric', v ? '1' : '0'); }
+  set password(String v) { _password = v; _save('privacy_password', v); }
   set authenticated(bool v) => _authenticated = v;
+
+  /// 从数据库加载设置
+  Future<void> load() async {
+    final db = _PrivacyDbProvider();
+    _enabled = (await db.get('privacy_enabled')) == '1';
+    _useBiometric = (await db.get('privacy_biometric')) != '0';
+    _password = await db.get('privacy_password') ?? '';
+  }
+
+  void _save(String key, String value) => _PrivacyDbProvider().set(key, value);
 
   bool get hasPassword => _password.isNotEmpty;
 
@@ -60,4 +71,10 @@ class PrivacySettings {
 
   /// 重置当前会话验证状态（后台切换时调用）
   void lock() => _authenticated = false;
+}
+
+class _PrivacyDbProvider {
+  final AppDatabase _db = AppDatabase();
+  Future<String?> get(String key) async { try { return await _db.getSetting(key); } catch (_) { return null; } }
+  Future<void> set(String key, String value) async { try { await _db.setSetting(key, value); } catch (_) {} }
 }
