@@ -124,7 +124,10 @@ class _HomePageState extends State<HomePage> {
   Future<void> _showAISettings() async {
     final settings = AISettings();
     final keyController = TextEditingController(text: settings.apiKey);
+    final urlController = TextEditingController(text: settings.customApiUrl);
+    final modelController = TextEditingController(text: settings.customModel);
     bool enabled = settings.enabled;
+    int providerIndex = settings.providerIndex;
 
     await showDialog(
       context: context,
@@ -138,57 +141,112 @@ class _HomePageState extends State<HomePage> {
               const Text('AI 助写设置'),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '开启后，在输入事项简介和详细情况时，'
-                '可使用 AI 对文本进行润色整理。',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              // 开关
-              SwitchListTile(
-                title: const Text('启用 AI 助写'),
-                subtitle: Text(
-                  enabled ? '输入框将显示 AI 润色按钮' : 'AI 功能已关闭',
-                  style: const TextStyle(fontSize: 12),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '开启后，在输入事项简介和详细情况时，'
+                  '可使用 AI 对文本进行润色整理。',
+                  style: TextStyle(fontSize: 13),
                 ),
-                value: enabled,
-                onChanged: (v) => setDialogState(() => enabled = v),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-              if (enabled) ...[
-                const SizedBox(height: 12),
-                const Text('API Key (Claude)',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: keyController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: 'sk-ant-...',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.visibility_off, size: 18),
-                      onPressed: () {},
-                    ),
+                const SizedBox(height: 16),
+                // 开关
+                SwitchListTile(
+                  title: const Text('启用 AI 助写'),
+                  subtitle: Text(
+                    enabled ? '输入框将显示 AI 润色按钮' : 'AI 功能已关闭',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                  style: const TextStyle(fontSize: 13),
+                  value: enabled,
+                  onChanged: (v) => setDialogState(() => enabled = v),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '需要 Anthropic Claude API Key，可从 '
-                  'console.anthropic.com 获取',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                ),
+                if (enabled) ...[
+                  const SizedBox(height: 12),
+                  // 供应商选择
+                  const Text('AI 供应商',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<int>(
+                    value: providerIndex,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: List.generate(AIProvider.all.length, (i) {
+                      final p = AIProvider.all[i];
+                      return DropdownMenuItem(
+                        value: i,
+                        child: Text(p.name, style: const TextStyle(fontSize: 14)),
+                      );
+                    }),
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => providerIndex = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // API Key
+                  const Text('API Key',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: keyController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: AIProvider.all[providerIndex].name.contains('DeepSeek')
+                          ? 'sk-...'
+                          : AIProvider.all[providerIndex].name.contains('Claude')
+                              ? 'sk-ant-...'
+                              : '输入你的 API Key',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  // 自定义选项
+                  if (AIProvider.all[providerIndex].name == '自定义') ...[
+                    const SizedBox(height: 12),
+                    const Text('API 地址',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: urlController,
+                      decoration: const InputDecoration(
+                        hintText: 'https://api.example.com/v1/chat/completions',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('模型名称',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: modelController,
+                      decoration: const InputDecoration(
+                        hintText: 'gpt-4o-mini',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Text(
+                    _apiKeyHint(providerIndex),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -199,11 +257,14 @@ class _HomePageState extends State<HomePage> {
               onPressed: () {
                 settings.apiKey = keyController.text.trim();
                 settings.enabled = enabled;
+                settings.providerIndex = providerIndex;
+                settings.customApiUrl = urlController.text.trim();
+                settings.customModel = modelController.text.trim();
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(
                       enabled && settings.hasKey
-                          ? 'AI 助写已启用'
+                          ? 'AI 助写已启用（${AIProvider.all[providerIndex].name}）'
                           : enabled
                               ? '请填写 API Key'
                               : 'AI 助写已关闭')),
@@ -216,6 +277,18 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     keyController.dispose();
+    urlController.dispose();
+    modelController.dispose();
+  }
+
+  String _apiKeyHint(int providerIndex) {
+    switch (providerIndex) {
+      case 1: return '通义千问 API Key 从 dashscope.aliyun.com 获取';
+      case 2: return 'Anthropic API Key 从 console.anthropic.com 获取';
+      case 3: return 'OpenAI API Key 从 platform.openai.com 获取';
+      case 4: return '填写自定义 API 地址和模型名称（兼容 OpenAI 格式）';
+      default: return 'DeepSeek API Key 从 platform.deepseek.com 获取';
+    }
   }
 
   Future<void> _exportToExcel() async {
