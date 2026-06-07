@@ -2,9 +2,9 @@ import '../models/entry.dart';
 import '../database/app_database.dart';
 import 'package:flutter/material.dart';
 
-/// 撤销操作管理器（单例）
+/// 撤销操作管理器（单例 + ChangeNotifier）
 /// 支持：删除记录撤回、编辑记录撤回
-class UndoManager {
+class UndoManager extends ChangeNotifier {
   static final UndoManager _instance = UndoManager._internal();
   factory UndoManager() => _instance;
   UndoManager._internal();
@@ -32,6 +32,7 @@ class UndoManager {
     _lastDeletedEntry = entry;
     _lastDeletedTagIds = entry.tags.map((t) => t.id!).toList();
     _lastDeletedAttributeTagIds = entry.attributeTags.map((at) => at.id!).toList();
+    notifyListeners();
   }
 
   /// 撤销删除：将被删除的记录重新写入数据库
@@ -52,6 +53,7 @@ class UndoManager {
       _lastDeletedEntry = null;
       _lastDeletedTagIds = [];
       _lastDeletedAttributeTagIds = [];
+      notifyListeners();
       return true;
     } catch (e) {
       debugPrint('撤销删除失败：$e');
@@ -67,6 +69,7 @@ class UndoManager {
     _lastEditedTagIds = oldEntry.tags.map((t) => t.id!).toList();
     _lastEditedAttributeTagIds = oldEntry.attributeTags.map((at) => at.id!).toList();
     _lastEditedProjectId = oldEntry.projectId;
+    notifyListeners();
   }
 
   /// 撤销编辑：恢复到编辑前的状态
@@ -88,6 +91,7 @@ class UndoManager {
       _lastEditedTagIds = null;
       _lastEditedAttributeTagIds = null;
       _lastEditedProjectId = null;
+      notifyListeners();
       return true;
     } catch (e) {
       debugPrint('撤销编辑失败：$e');
@@ -106,5 +110,6 @@ class UndoManager {
     _lastEditedTagIds = null;
     _lastEditedAttributeTagIds = null;
     _lastEditedProjectId = null;
+    notifyListeners();
   }
 }

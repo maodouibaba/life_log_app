@@ -27,7 +27,7 @@ class ExportService {
     final sheet = excel['生活记录'];
 
     // 表头
-    final header = <String>['时间', '内容'];
+    final header = <String>['时间', '事项简介', '内容'];
     for (int i = 1; i <= maxDepth; i++) {
       header.add('层级$i');
     }
@@ -57,8 +57,11 @@ class ExportService {
       final padded = List<String>.from(deepestParts)
         ..addAll(List.filled(maxDepth - deepestParts.length, ''));
 
+      final title = row['title'] as String? ?? '';
+
       sheet.appendRow([
         dateTimeStr,
+        title,
         content,
         ...padded,
         project,
@@ -68,9 +71,10 @@ class ExportService {
 
     // 设置列宽
     sheet.setColumnWidth(0, 25); // 时间列
-    sheet.setColumnWidth(1, 60); // 内容列
+    sheet.setColumnWidth(1, 20); // 事项简介列
+    sheet.setColumnWidth(2, 60); // 内容列
     for (int i = 0; i < maxDepth; i++) {
-      sheet.setColumnWidth(i + 2, 18); // 层级列
+      sheet.setColumnWidth(i + 3, 18); // 层级列
     }
 
     // 保存文件

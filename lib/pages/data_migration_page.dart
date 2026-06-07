@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -288,7 +289,8 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                   const SizedBox(height: 8),
                   const Text(
                       '将所有记录、标签、项目等数据导出为 JSON 备份文件。\n'
-                      '导出的文件可分享到微信、AirDrop 等，也可通过爱思助手取出。'),
+                      '导出的文件可分享到微信、AirDrop 等。\n'
+                      'iOS/Android 用户可通过爱思助手取出。'),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -336,37 +338,40 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                         color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 14,
-                            color: theme.colorScheme.secondary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'iPhone 用爱思助手 → 文件共享 → 生活记录 → Documents → 放入 .json 文件',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSecondaryContainer),
+                  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid))
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 14,
+                              color: theme.colorScheme.secondary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              Platform.isIOS
+                                  ? 'iPhone 用爱思助手 → 文件共享 → 生活记录 → Documents → 放入 .json 文件'
+                                  : '将 .json 备份文件放入 App 的文档目录',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSecondaryContainer),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 16),
 
-                  // ---- 从 iPhone 文件 App 选择 ----
+                  // ---- 从文件管理器选择 ----
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: _importFromFilePicker,
                       icon: const Icon(Icons.folder_open_outlined),
-                      label: const Text('从 iPhone「文件」App 选择'),
+                      label: const Text('选择备份文件'),
                     ),
                   ),
 
@@ -449,7 +454,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                                         TextStyle(color: Colors.grey)),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '请先将 .json 备份文件通过爱思助手放入 App 的文档目录',
+                                  '请先将 .json 备份文件放入 App 的文档目录\n然后点击刷新扫描',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                       fontSize: 12,

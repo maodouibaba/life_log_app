@@ -5,6 +5,7 @@ import '../models/tag.dart';
 import '../models/project.dart';
 import '../models/attribute_tag.dart';
 import '../services/undo_manager.dart';
+import '../widgets/undo_button.dart';
 import '../utils/text_formatter.dart';
 import 'entry_detail_page.dart';
 
@@ -42,8 +43,11 @@ class _ListViewPageState extends State<ListViewPage> {
   final _searchController = TextEditingController();
   String _searchKeyword = '';
 
+  // 排序
+  bool _sortAscending = false;
+
   // 自定义分组
-  String _groupBy = 'date'; // 'date' | 'project' | 'none'
+  String _groupBy = 'date'; // 'date' | 'project' | 'tag' | 'attribute_tag' | 'none'
   bool _allExpanded = true; // 分组全部展开/折叠
   int _expandVersion = 0; // 强制刷新用
 
@@ -92,7 +96,7 @@ class _ListViewPageState extends State<ListViewPage> {
 
       if (!mounted) return;
       setState(() {
-        _entries = entries;
+        _entries = _sortAscending ? entries.reversed.toList() : entries;
         _loading = false;
       });
     } catch (e) {
@@ -359,6 +363,35 @@ class _ListViewPageState extends State<ListViewPage> {
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  /// 取记录的完整标签路径（根 → 叶）
+  String _entryTagPath(Entry entry) {
+    if (entry.tags.isEmpty) return '未标签';
+    // 构建 id → tag 的查询映射
+    final tagMap = <int, Tag>{};
+    for (final t in entry.tags) {
+      if (t.id != null) tagMap[t.id!] = t;
+    }
+    if (tagMap.isEmpty) return '未标签';
+
+    // 找最深（叶）标签 → 沿 parentId 回溯构建路径
+    String? deepestPath;
+    int maxDepth = -1;
+    for (final t in entry.tags) {
+      if (t.id == null) continue;
+      final parts = <String>[];
+      int? currentId = t.id;
+      while (currentId != null && tagMap.containsKey(currentId)) {
+        parts.insert(0, tagMap[currentId]!.name);
+        currentId = tagMap[currentId]!.parentId;
+      }
+      if (parts.length > maxDepth) {
+        maxDepth = parts.length;
+        deepestPath = parts.join(' > ');
+      }
+    }
+    return deepestPath ?? entry.tags.first.name;
+  }
+
   // ==================== 分组 ====================
 
   Map<String, List<Entry>> _groupEntries(List<Entry> entries) {
@@ -374,9 +407,7 @@ class _ListViewPageState extends State<ListViewPage> {
       case 'tag':
         final map = <String, List<Entry>>{};
         for (final entry in entries) {
-          final key = entry.tags.isNotEmpty
-              ? entry.tags.first.name
-              : '未标签';
+          final key = _entryTagPath(entry);
           map.putIfAbsent(key, () => []);
           map[key]!.add(entry);
         }
@@ -384,9 +415,8 @@ class _ListViewPageState extends State<ListViewPage> {
       case 'attribute_tag':
         final map = <String, List<Entry>>{};
         for (final entry in entries) {
-          final key = entry.attributeTags.isNotEmpty
-              ? entry.attributeTags.first.name
-              : '未标签';
+          final names = entry.attributeTags.map((at) => at.name);
+          final key = names.isNotEmpty ? names.join('、') : '未标签';
           map.putIfAbsent(key, () => []);
           map[key]!.add(entry);
         }
@@ -729,6 +759,22 @@ class _ListViewPageState extends State<ListViewPage> {
                           currentGroupBy: _groupBy,
                           onSelected: (v) => setState(() => _groupBy = v),
                         ),
+                        UndoButton(onRefresh: _loadData),
+                        // 排序切换
+                        IconButton(
+                          icon: Icon(
+                            _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                            size: 18,
+                          ),
+                          tooltip: _sortAscending ? '正序' : '倒序',
+                          onPressed: () => setState(() {
+                            _sortAscending = !_sortAscending;
+                            _entries = _entries.reversed.toList();
+                          }),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
+                        ),
                         const Spacer(),
                         IconButton(
                           icon: const Icon(Icons.unfold_more, size: 18),
@@ -826,34 +872,6 @@ class _ListViewPageState extends State<ListViewPage> {
                                 UndoManager().recordDeletion(entry);
                                 await _db.deleteEntry(entry.id!);
                                 _loadData();
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('已删除'),
-                                    action: SnackBarAction(
-                                      label: '撤销',
-                                      onPressed: () async {
-                                        final ok = await UndoManager().undoDelete();
-                                        if (mounted) {
-                                          if (ok) {
-                                            _loadData();
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              const SnackBar(content: Text('已撤销删除')),
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                  content: Text('撤销失败'),
-                                                  backgroundColor: Colors.red),
-                                            );
-                                          }
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                );
                               }
                             },
                             onTapEntry: (entry) async {
@@ -866,27 +884,7 @@ class _ListViewPageState extends State<ListViewPage> {
                               );
                               _loadData();
                               if (result == 'edit' && mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('已保存'),
-                                    action: SnackBarAction(
-                                      label: '撤销',
-                                      onPressed: () async {
-                                        final ok =
-                                            await UndoManager().undoEdit();
-                                        if (mounted) {
-                                          _loadData();
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(
-                                                    ok ? '已撤销编辑' : '撤销失败')),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                );
+                                // UndoBanner 会自动显示撤回项
                               }
                             },
                             formatDateTime: _formatDateTime,

@@ -10,12 +10,14 @@ import 'attribute_tag_manager_page.dart';
 import 'project_manager_page.dart';
 import 'list_view_page.dart';
 import 'data_migration_page.dart';
+import 'sync_settings_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
 import '../services/theme_settings.dart';
 import '../services/privacy_settings.dart';
 import '../utils/text_formatter.dart';
+import '../widgets/undo_button.dart';
 
 /// 首页时间线
 /// 展示当前入口下的所有记录，按天分组
@@ -41,6 +43,7 @@ class _HomePageState extends State<HomePage> {
   Space? _currentSpace;
   bool _allDaysExpanded = true;
   int _dayExpandVersion = 0;
+  bool _sortAscending = false;
 
   int get _spaceId => widget.spaceId;
 
@@ -86,7 +89,7 @@ class _HomePageState extends State<HomePage> {
       );
       if (!mounted) return;
       setState(() {
-        _entries = entries;
+        _entries = _sortAscending ? entries.reversed.toList() : entries;
         _loading = false;
       });
     } catch (e) {
@@ -627,6 +630,14 @@ class _HomePageState extends State<HomePage> {
                   );
                   _loadEntries();
                   break;
+                case 'sync':
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const SyncSettingsPage()),
+                  );
+                  break;
                 case 'switch_space':
                   widget.onSwitchSpace();
                   break;
@@ -659,6 +670,15 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.sync_alt),
                   title: Text('数据备份'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'sync',
+                child: ListTile(
+                  leading: Icon(Icons.cloud_sync_outlined),
+                  title: Text('坚果云同步'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -752,6 +772,23 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const Spacer(),
+                  UndoButton(onRefresh: _loadEntries),
+                  IconButton(
+                    icon: Icon(
+                      _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                      size: 16,
+                    ),
+                    tooltip: _sortAscending ? '正序（最早在前）' : '倒序（最新在前）',
+                    onPressed: () {
+                      setState(() {
+                        _sortAscending = !_sortAscending;
+                        _entries = _entries.reversed.toList();
+                      });
+                    },
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
+                  ),
                   Text(
                     '${_entries.length} 条记录',
                     style: TextStyle(
@@ -836,63 +873,14 @@ class _HomePageState extends State<HomePage> {
                               );
                               _loadEntries();
                               if (result == 'edit' && mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('已保存'),
-                                    action: SnackBarAction(
-                                      label: '撤销',
-                                      onPressed: () async {
-                                        final ok =
-                                            await UndoManager().undoEdit();
-                                        if (mounted) {
-                                          _loadEntries();
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(
-                                                    ok ? '已撤销编辑' : '撤销失败')),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                );
+                                // UndoBanner 会自动显示撤回项
                               }
                             },
                             onDelete: (entry) async {
-                              // 记录到撤销管理器
+                              // 记录到撤销管理器，UndoBanner 会自动显示
                               UndoManager().recordDeletion(entry);
                               await _db.deleteEntry(entry.id!);
                               _loadEntries();
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text('已删除'),
-                                  action: SnackBarAction(
-                                    label: '撤销',
-                                    onPressed: () async {
-                                      final ok = await UndoManager().undoDelete();
-                                      if (mounted) {
-                                        if (ok) {
-                                          _loadEntries();
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                                content: Text('已撤销删除')),
-                                          );
-                                        } else {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                                content: Text('撤销失败'),
-                                                backgroundColor: Colors.red),
-                                          );
-                                        }
-                                      }
-                                    },
-                                  ),
-                                ),
-                              );
                             },
                           );
                         },
@@ -906,33 +894,7 @@ class _HomePageState extends State<HomePage> {
           final result =
               await EntryEditorPage.showAsSheet(context, spaceId: _spaceId);
           _loadEntries();
-          if (result == 'edit' && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('已保存'),
-                action: SnackBarAction(
-                  label: '撤销',
-                  onPressed: () async {
-                    final ok = await UndoManager().undoEdit();
-                    if (mounted) {
-                      if (ok) {
-                        _loadEntries();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已撤销编辑')),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('撤销失败'),
-                              backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                ),
-              ),
-            );
-          }
+          // UndoBanner 会自动显示撤回项
         },
         child: const Icon(Icons.add),
       ),
