@@ -177,6 +177,44 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     }
   }
 
+  /// 删除单个备份文件（带确认）
+  Future<void> _deleteBackupFile(File file) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除备份文件'),
+        content: Text('确定要删除 "${file.path.split(Platform.pathSeparator).last}" 吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除',
+                style:
+                    TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await file.delete();
+      setState(() => _scanKey++);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('备份文件已删除')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：$e')),
+      );
+    }
+  }
+
   Future<List<FileSystemEntity>> _scanBackupFiles() async {
     final dir = _scanPath.isNotEmpty
         ? Directory(_scanPath)
@@ -449,14 +487,28 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                                   subtitle: Text('$size · $modTime',
                                       style:
                                           const TextStyle(fontSize: 11)),
-                                  trailing: TextButton(
-                                    onPressed: () =>
-                                        _importFromFile(file.path),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor:
-                                          theme.colorScheme.error,
-                                    ),
-                                    child: const Text('恢复'),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            _importFromFile(file.path),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              theme.colorScheme.error,
+                                        ),
+                                        child: const Text('恢复'),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.delete_outline,
+                                            size: 18,
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant),
+                                        tooltip: '删除此备份文件',
+                                        onPressed: () =>
+                                            _deleteBackupFile(file),
+                                      ),
+                                    ],
                                   ),
                                   dense: true,
                                 ),

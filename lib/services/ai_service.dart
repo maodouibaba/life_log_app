@@ -195,13 +195,16 @@ class AIService {
       final response = await post(Uri.parse(s.resolvedApiUrl), headers: headers, body: body);
 
       if (response.statusCode == 200) {
-        return isClaude ? _parseClaude(response.body) : _parseOpenAI(response.body);
+        // 使用 utf8 解码，避免 Content-Type 缺少 charset 时 Latin-1 解码导致中文乱码
+        final bodyUtf8 = utf8.decode(response.bodyBytes);
+        return isClaude ? _parseClaude(bodyUtf8) : _parseOpenAI(bodyUtf8);
       } else if (response.statusCode == 401) {
         throw Exception('API Key 无效，请检查后重试');
       } else if (response.statusCode == 429) {
         throw Exception('请求太频繁，请稍后再试');
       } else {
-        throw Exception(_extractError(response.body) ?? '请求失败 (${response.statusCode})');
+        final bodyUtf8 = utf8.decode(response.bodyBytes);
+        throw Exception(_extractError(bodyUtf8) ?? '请求失败 (${response.statusCode})');
       }
     } catch (e) {
       if (e is Exception) rethrow;
