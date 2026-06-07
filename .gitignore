@@ -31,6 +31,17 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Workspace 附加文件（非项目代码）
+/.claude/
+/.claudian/
+/.obsidian/
+/life-log-app.ipa
+/life_log_样表.xlsx
+/生活记录APP_Windows版/
+/杜琳琳的/
+/temp/
+/flutter_01.log
+
 # Symbolication related
 app.*.symbols
 
