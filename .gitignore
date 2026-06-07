@@ -52,3 +52,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 项目文档（本地使用，不推送GitHub）
+/*.md
+!/README.md
