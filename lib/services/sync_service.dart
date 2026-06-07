@@ -226,39 +226,77 @@ class SyncService {
   // ==================== XML 解析 ====================
 
   /// 解析 PROPFIND 返回的 XML 多状态响应，提取文件列表
+  /// 使用 href 而非 displayname（href 在所有 PROPFIND 响应中必定存在）
+  /// 注意：xml 包的 findElements 对带命名空间的元素有兼容问题，
+  /// 所以这里全部用手动遍历 children 代替。
   static List<RemoteFile> _parsePropfind(String xml) {
     final files = <RemoteFile>[];
     final doc = XmlDocument.parse(xml);
-    final responses = doc.findAllElements('response');
+    final root = doc.rootElement;
+
+    // 手动递归查找 response 元素（避开 xml 包的命名空间问题）
+    List<XmlElement> findChildrenByLocalName(XmlElement el, String name) {
+      final r = <XmlElement>[];
+      if (el.name.local == name) r.add(el);
+      for (final c in el.children) {
+        if (c is XmlElement) r.addAll(findChildrenByLocalName(c, name));
+      }
+      return r;
+    }
+
+    final responses = findChildrenByLocalName(root, 'response');
 
     for (final resp in responses) {
-      final propstat = resp.findElements('propstat').firstOrNull;
+      // 手动查找 propstat 子元素
+      XmlElement? propstat;
+      for (final c in resp.children) {
+        if (c is XmlElement && c.name.local == 'propstat') {
+          propstat = c;
+          break;
+        }
+      }
       if (propstat == null) continue;
 
-      final prop = propstat.findElements('prop').firstOrNull;
+      // 手动查找 prop 子元素
+      XmlElement? prop;
+      for (final c in propstat.children) {
+        if (c is XmlElement && c.name.local == 'prop') {
+          prop = c;
+          break;
+        }
+      }
       if (prop == null) continue;
 
-      // 跳过目录
-      final rt = prop.findElements('resourcetype').firstOrNull;
-      if (rt != null && rt.findElements('collection').isNotEmpty) continue;
+      // 跳过目录（检查 resourcetype 是否包含 collection）
+      final rtNode = _findChildByLocalName(prop, 'resourcetype');
+      if (rtNode != null) {
+        final collection = _findChildByLocalName(rtNode, 'collection');
+        if (collection != null) continue;
+      }
 
-      // 文件名
-      final dn = prop.findElements('displayname').firstOrNull;
-      final name = dn?.innerText ?? '';
-      final cleanName = _normalizeFileName(name);
-      if (cleanName.isEmpty || cleanName == _dirName) continue;
+      // 从 href 提取文件名（比 displayname 更可靠）
+      final hrefEl = _findChildByLocalName(resp, 'href');
+      if (hrefEl == null) continue;
+      final href = hrefEl.innerText.trim();
+
+      final fileName = href.split('/').last;
+      if (fileName.isEmpty) continue;
+
+      // URL 解码文件名（可能包含中文百分号编码）
+      final cleanName = Uri.decodeComponent(fileName);
+      if (cleanName == _dirName) continue;
       if (!cleanName.endsWith('.json')) continue;
 
       // 文件大小
       int size = 0;
-      final cl = prop.findElements('getcontentlength').firstOrNull;
-      if (cl != null) size = int.tryParse(cl.innerText) ?? 0;
+      final clNode = _findChildByLocalName(prop, 'getcontentlength');
+      if (clNode != null) size = int.tryParse(clNode.innerText) ?? 0;
 
       // 修改时间
       DateTime modified = DateTime.now();
-      final lm = prop.findElements('getlastmodified').firstOrNull;
-      if (lm != null) {
-        final parsed = _parseHttpDate(lm.innerText);
+      final lmNode = _findChildByLocalName(prop, 'getlastmodified');
+      if (lmNode != null) {
+        final parsed = _parseHttpDate(lmNode.innerText);
         if (parsed != null) modified = parsed;
       }
 
@@ -269,10 +307,12 @@ class SyncService {
     return files;
   }
 
-  /// 从显示名提取干净的文件名
-  static String _normalizeFileName(String raw) {
-    final parts = raw.split('/');
-    return parts.last;
+  /// 在元素的直接子元素中查找指定 localName 的 XmlElement
+  static XmlElement? _findChildByLocalName(XmlElement parent, String localName) {
+    for (final c in parent.children) {
+      if (c is XmlElement && c.name.local == localName) return c;
+    }
+    return null;
   }
 
   /// 解析 HTTP 日期格式 "Sat, 07 Jun 2026 06:00:00 GMT"
@@ -300,7 +340,7 @@ class SyncService {
           hour == null || min == null || sec == null) {
         return null;
       }
-      return DateTime.utc(year, month, day, hour, min, sec);
+      return DateTime.utc(year, month, day, hour, min, sec).toLocal();
     } catch (_) {
       return null;
     }
