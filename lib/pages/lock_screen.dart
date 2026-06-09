@@ -34,7 +34,13 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused && PrivacySettings().enabled) {
+    // paused: 移动端切到后台
+    // hidden: Windows 最小化 / macOS 隐藏
+    // inactive: 窗口失焦（部分平台）
+    if (PrivacySettings().enabled &&
+        (state == AppLifecycleState.paused ||
+         state == AppLifecycleState.hidden ||
+         state == AppLifecycleState.inactive)) {
       PrivacySettings().lock();
       if (mounted) setState(() => _locked = true);
     }

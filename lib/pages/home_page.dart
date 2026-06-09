@@ -1079,21 +1079,26 @@ class _EntryCard extends StatelessWidget {
                     Row(
                       children: [
                         if (entry.projectName != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                entry.projectName!,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color:
-                                      theme.colorScheme.onPrimaryContainer,
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Container(
+                                constraints: const BoxConstraints(maxWidth: 130),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  entry.projectName!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color:
+                                        theme.colorScheme.onPrimaryContainer,
+                                  ),
                                 ),
                               ),
                             ),

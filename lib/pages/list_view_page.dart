@@ -1249,7 +1249,7 @@ class _MultiTagFilterDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.only(left: level * 20.0),
+            padding: EdgeInsets.only(left: level * 36.0),
             child: ListTile(
               dense: true,
               leading: Checkbox(

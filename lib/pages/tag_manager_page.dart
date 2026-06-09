@@ -329,7 +329,7 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: EdgeInsets.only(left: widget.level * 24.0),
+              padding: EdgeInsets.only(left: widget.level * 36.0),
               child: Card(
                 margin: const EdgeInsets.symmetric(vertical: 1),
                 child: ListTile(
@@ -495,7 +495,7 @@ class _MoveTagDialogState extends State<_MoveTagDialog> {
       children: [
         RadioListTile<int>(
           title: Padding(
-            padding: EdgeInsets.only(left: level * 16.0),
+            padding: EdgeInsets.only(left: level * 36.0),
             child: Text(tag.name),
           ),
           value: tag.id!,

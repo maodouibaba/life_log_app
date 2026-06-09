@@ -162,58 +162,77 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     final config = _config;
     if (config == null) return;
 
-    // 确认下载
     final sizeStr = _formatSize(file.size);
     final dateStr = _formatDateTime(file.modified);
-    final confirmed = await showDialog<bool>(
+    // 选择恢复模式：覆盖 or 合并
+    final mode = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('恢复备份'),
+        title: const Text('选择恢复模式'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('备份文件：${file.name}'),
-            Text('备份时间：$dateStr'),
-            Text('文件大小：$sizeStr'),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade300),
+            Text('备份文件：${file.name}', style: const TextStyle(fontSize: 13)),
+            Text('备份时间：$dateStr', style: const TextStyle(fontSize: 13)),
+            Text('文件大小：$sizeStr', style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 16),
+            const Text('请选择恢复方式：', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.swap_horiz, color: Colors.teal),
+                title: const Text('合并到本地'),
+                subtitle: const Text('将云端与本地数据合并，'
+                    '冲突时保留较新的版本。本地数据不会丢失。',
+                    style: TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, SyncService.modeMerge),
               ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded,
-                      size: 18, color: Colors.deepOrange),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '恢复备份将清空当前所有本地数据并替换为备份内容，'
-                      '此操作不可撤销。建议先上传一份当前数据的备份。',
-                      style: TextStyle(fontSize: 12, color: Colors.deepOrange),
-                    ),
-                  ),
-                ],
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.file_copy, color: Colors.red),
+                title: const Text('覆盖恢复'),
+                subtitle: const Text('清空所有本地数据，替换为云端备份。'
+                    '此操作不可撤销。',
+                    style: TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, SyncService.modeOverwrite),
               ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('确定恢复',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-          ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (mode == null) return;
+
+    // 覆盖模式再确认一次
+    if (mode == SyncService.modeOverwrite) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('确认覆盖恢复'),
+          content: const Text('此操作将清空所有本地数据并替换为备份内容，\n'
+              '不可撤销。建议先上传一份当前数据的备份。\n\n确定继续吗？'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('确定覆盖',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
 
     setState(() => _downloading = true);
     _setStatus('正在下载...');
@@ -223,13 +242,21 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           await SyncService.downloadBackup(config, file.name);
       if (!mounted) return;
 
-      // 导入到本地数据库
       final db = AppDatabase();
-      await db.importFromJson(jsonContent);
-
-      if (!mounted) return;
-      setState(() => _downloading = false);
-      _setStatus('✅ 恢复成功！本地数据已替换为云端备份。');
+      if (mode == SyncService.modeMerge) {
+        // 合并模式
+        final stats = await db.mergeFromJson(jsonContent);
+        if (!mounted) return;
+        setState(() => _downloading = false);
+        _setStatus('✅ 合并成功！新增 ${stats['added_entries']} 条记录、'
+            '更新 ${stats['updated_entries']} 条、新增 ${stats['added_tags']} 个标签。');
+      } else {
+        // 覆盖模式（原有逻辑）
+        await db.importFromJson(jsonContent);
+        if (!mounted) return;
+        setState(() => _downloading = false);
+        _setStatus('✅ 覆盖恢复成功！本地数据已替换为云端备份。');
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _downloading = false);

@@ -110,12 +110,11 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       _selectedProjectId = widget.entry!.projectId;
       _selectedProjectName = widget.entry!.projectName;
       // 从已有树状标签中找出最深的那个作为叶标签
-      _selectedLeafTagId =
-          _findDeepestTag(widget.entry!.tags.map((t) => t.id!).toSet());
       // 属性标签
       _selectedAttributeTagIds =
           widget.entry!.attributeTags.map((t) => t.id!).toSet();
-      _initialTagsLoaded = true;
+      // 注意：_selectedLeafTagId 不在此处设置——_loadTags() 是异步的，
+      // _allTags 此时尚未加载完成，等到 _loadTags() 完成后会自动设置
     }
   }
 
@@ -203,6 +202,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     );
     if (result != null) {
       setState(() => _selectedAttributeTagIds = result);
+      // 刷新属性标签列表（确保标签名正确显示）
+      _loadAttributeTags();
     }
   }
 
@@ -307,93 +308,135 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     final controller = TextEditingController(text: _contentController.text);
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('详细情况'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: Column(
-            children: [
-              // 格式化工具栏
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    _FormatBtn(
-                      icon: Icons.format_bold,
-                      tooltip: '粗体 (**text**)',
-                      onTap: () => _insertFormatting(controller, '**', '**', hint: '粗体文字'),
-                    ),
-                    const SizedBox(width: 2),
-                    _FormatBtn(
-                      icon: Icons.format_italic,
-                      tooltip: '斜体 (*text*)',
-                      onTap: () => _insertFormatting(controller, '*', '*', hint: '斜体文字'),
-                    ),
-                    const SizedBox(width: 2),
-                    _FormatBtn(
-                      icon: Icons.format_list_bulleted,
-                      tooltip: '无序列表',
-                      onTap: () => _insertFormatting(controller, '- ', ''),
-                    ),
-                    const SizedBox(width: 2),
-                    _FormatBtn(
-                      icon: Icons.format_list_numbered,
-                      tooltip: '有序列表',
-                      onTap: () => _insertFormatting(controller, '1. ', ''),
-                    ),
-                    const SizedBox(width: 2),
-                    _FormatBtn(
-                      icon: Icons.title,
-                      tooltip: '标题 (#)',
-                      onTap: () => _insertFormatting(controller, '# ', ''),
-                    ),
-                    if (AISettings().enabled && AISettings().hasKey) ...[
-                      const SizedBox(width: 4),
-                      Container(width: 1, height: 18, color: Theme.of(ctx).colorScheme.outlineVariant),
-                      const SizedBox(width: 4),
-                      _AIBtn(
-                        controller: controller,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // 文本框
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  autofocus: true,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  decoration: const InputDecoration(
-                    hintText: '在此输入详细情况...',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
+      builder: (ctx) {
+        bool previewMode = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Row(
+              children: [
+                const Expanded(child: Text('详细情况')),
+                // 预览/编辑切换按钮
+                TextButton.icon(
+                  onPressed: () => setDialogState(() => previewMode = !previewMode),
+                  icon: Icon(previewMode ? Icons.edit : Icons.visibility, size: 16),
+                  label: Text(previewMode ? '编辑' : '预览', style: const TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                 ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 400,
+              child: Column(
+                children: [
+                  // 格式化工具栏（仅编辑模式显示）
+                  if (!previewMode)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _FormatBtn(
+                              icon: Icons.format_bold,
+                              tooltip: '粗体 (**text**)',
+                              onTap: () => _insertFormatting(controller, '**', '**', hint: '粗体文字'),
+                            ),
+                            const SizedBox(width: 2),
+                            _FormatBtn(
+                              icon: Icons.format_italic,
+                              tooltip: '斜体 (*text*)',
+                              onTap: () => _insertFormatting(controller, '*', '*', hint: '斜体文字'),
+                            ),
+                            const SizedBox(width: 2),
+                            _FormatBtn(
+                              icon: Icons.format_list_bulleted,
+                              tooltip: '无序列表',
+                              onTap: () => _insertFormatting(controller, '- ', ''),
+                            ),
+                            const SizedBox(width: 2),
+                            _FormatBtn(
+                              icon: Icons.format_list_numbered,
+                              tooltip: '有序列表',
+                              onTap: () => _insertFormatting(controller, '1. ', ''),
+                            ),
+                            const SizedBox(width: 2),
+                            _FormatBtn(
+                              icon: Icons.title,
+                              tooltip: '标题 (#)',
+                              onTap: () => _insertFormatting(controller, '# ', ''),
+                            ),
+                            if (AISettings().enabled && AISettings().hasKey) ...[
+                              const SizedBox(width: 4),
+                              Container(width: 1, height: 18, color: Theme.of(ctx).colorScheme.outlineVariant),
+                              const SizedBox(width: 4),
+                              _AIBtn(
+                                controller: controller,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  // 编辑模式：文本框 / 预览模式：渲染效果
+                  Expanded(
+                    child: previewMode
+                        ? SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: controller.text.trim().isEmpty
+                                  ? Text('暂无内容',
+                                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant))
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: TextFormatter.render(
+                                        controller.text,
+                                        baseStyle: TextStyle(
+                                          fontSize: 15,
+                                          color: Theme.of(ctx).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          )
+                        : TextField(
+                            controller: controller,
+                            autofocus: true,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            decoration: const InputDecoration(
+                              hintText: '在此输入详细情况...',
+                              border: OutlineInputBorder(),
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消')),
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(ctx, controller.text.trim()),
+                child: const Text('确定'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (result != null) {
       setState(() => _contentController.text = result);
@@ -890,9 +933,34 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
   late List<Tag> _allTags;
   late int? _selectedLeafTagId;
   final Set<int> _expandedIds = {};
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   List<Tag> get _rootTags =>
       _allTags.where((t) => t.parentId == null).toList();
+
+  /// 获取标签的完整路径字符串
+  String _getTagPath(Tag tag) {
+    final parts = <String>[tag.name];
+    int? currentId = tag.parentId;
+    while (currentId != null) {
+      final matches = _allTags.where((t) => t.id == currentId);
+      if (matches.isEmpty) break;
+      parts.insert(0, matches.first.name);
+      currentId = matches.first.parentId;
+    }
+    return parts.join(' > ');
+  }
+
+  /// 搜索模式下匹配的标签列表（按路径排序）
+  List<Tag> get _matchedTags {
+    if (_searchQuery.isEmpty) return [];
+    final q = _searchQuery.toLowerCase();
+    final matches = _allTags.where((t) =>
+        t.name.toLowerCase().contains(q)).toList();
+    matches.sort((a, b) => _getTagPath(a).compareTo(_getTagPath(b)));
+    return matches;
+  }
 
   @override
   void initState() {
@@ -910,6 +978,12 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
         current = parentId;
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Set<int> _getAncestorsInclusive(int tagId) {
@@ -968,49 +1042,122 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // 搜索模式下构建扁平结果列表
+    Widget buildSearchResults() {
+      final matched = _matchedTags;
+      if (matched.isEmpty) {
+        return const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('没有匹配的标签', style: TextStyle(color: Colors.grey)),
+        );
+      }
+      return ListView(
+        children: matched.map((tag) {
+          final isSelected = _selectedLeafTagId == tag.id;
+          final path = _getTagPath(tag);
+          return ListTile(
+            dense: true,
+            leading: Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              size: 18,
+              color: isSelected ? theme.colorScheme.primary : null,
+            ),
+            title: Text(tag.name, style: TextStyle(
+              fontWeight: isSelected ? FontWeight.w600 : null,
+              color: isSelected ? theme.colorScheme.primary : null,
+            )),
+            subtitle: Text(path, style: TextStyle(
+              fontSize: 11,
+              color: theme.colorScheme.onSurfaceVariant,
+            )),
+            onTap: () => setState(() => _selectedLeafTagId = tag.id),
+          );
+        }).toList(),
+      );
+    }
+
     return AlertDialog(
       title: const Text('选择树状标签'),
       content: SizedBox(
         width: double.maxFinite,
-        child: _rootTags.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('还没有标签', style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    FilledButton.tonal(
-                      onPressed: () => _createTag(),
-                      child: const Text('创建第一个标签'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 搜索框
+            if (_allTags.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: '搜索标签...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                  ],
-                ),
-              )
-            : ListView(
-                children: [
-                  // 新建根标签
-                  InkWell(
-                    onTap: () => _createTag(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_circle,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Text('新建根标签',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                              )),
-                        ],
-                      ),
-                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   ),
-                  ..._rootTags.map((tag) => _buildNode(tag, 0)),
-                ],
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                ),
               ),
+            // 内容区域
+            Expanded(
+              child: _searchQuery.isNotEmpty
+                  ? buildSearchResults()
+                  : _rootTags.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('还没有标签', style: TextStyle(color: Colors.grey)),
+                              const SizedBox(height: 8),
+                              FilledButton.tonal(
+                                onPressed: () => _createTag(),
+                                child: const Text('创建第一个标签'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView(
+                          children: [
+                            // 新建根标签
+                            InkWell(
+                              onTap: () => _createTag(),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 8),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.add_circle,
+                                        size: 18,
+                                        color: theme.colorScheme.primary),
+                                    const SizedBox(width: 8),
+                                    Text('新建根标签',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.primary,
+                                        )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            ..._rootTags.map((tag) => _buildNode(tag, 0)),
+                          ],
+                        ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1045,7 +1192,7 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: level * 20.0),
+          padding: EdgeInsets.only(left: level * 36.0),
           child: Row(
             children: [
               if (hasChildren)
@@ -1107,14 +1254,15 @@ class _TreeTagPickerDialogState extends State<_TreeTagPickerDialog> {
                   ),
                 ),
               ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline, size: 16),
-                onPressed: () => _createTag(parentId: tag.id),
-                tooltip: '添加子标签',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              ),
+              // 添加子标签按钮紧跟在标签名后，避免太远不好对应
+              if (tag.id != null && !isSelected)
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 16),
+                  onPressed: () => _createTag(parentId: tag.id),
+                  tooltip: '添加子标签',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
             ],
           ),
         ),
@@ -1146,12 +1294,27 @@ class _AttributeTagPickerDialogState
   late Set<int> _selectedIds;
   List<AttributeTag> _allTags = [];
   List<AttributeTagGroup> _groups = [];
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<AttributeTag> get _filteredTags {
+    if (_searchQuery.isEmpty) return _allTags;
+    final q = _searchQuery.toLowerCase();
+    return _allTags.where((t) =>
+        t.name.toLowerCase().contains(q)).toList();
+  }
 
   @override
   void initState() {
     super.initState();
     _selectedIds = Set.from(widget.selectedIds);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -1197,81 +1360,131 @@ class _AttributeTagPickerDialogState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final ungrouped = _getTagsByGroup(null);
+    final filtered = _filteredTags;
+
+    Widget buildTagList() {
+      if (_searchQuery.isNotEmpty) {
+        if (filtered.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('没有匹配的属性标签', style: TextStyle(color: Colors.grey)),
+          );
+        }
+        return ListView(
+          children: filtered.map((t) => _buildTagTile(t)).toList(),
+        );
+      }
+
+      if (_allTags.isEmpty && _groups.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('还没有属性标签',
+                  style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: () => _createTag(),
+                child: const Text('创建第一个属性标签'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return ListView(
+        children: [
+          // 新建
+          InkWell(
+            onTap: () => _createTag(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.add_circle,
+                      size: 18,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text('新建属性标签',
+                      style: TextStyle(
+                        color: theme.colorScheme.primary,
+                      )),
+                ],
+              ),
+            ),
+          ),
+          const Divider(),
+
+          // 分组
+          ..._groups.map((g) {
+            final tags = _getTagsByGroup(g.id);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(g.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600)),
+                ),
+                ...tags.map((t) => _buildTagTile(t)),
+                const SizedBox(height: 4),
+              ],
+            );
+          }),
+
+          // 未分组
+          if (ungrouped.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('未分组',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ...ungrouped.map((t) => _buildTagTile(t)),
+          ],
+        ],
+      );
+    }
 
     return AlertDialog(
       title: Text('选择属性标签（已选 ${_selectedIds.length}）'),
       content: SizedBox(
         width: double.maxFinite,
-        child: _allTags.isEmpty && _groups.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('还没有属性标签',
-                        style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    FilledButton.tonal(
-                      onPressed: () => _createTag(),
-                      child: const Text('创建第一个属性标签'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 搜索框
+            if (_allTags.isNotEmpty || _groups.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: '搜索属性标签...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                  ],
-                ),
-              )
-            : ListView(
-                children: [
-                  // 新建
-                  InkWell(
-                    onTap: () => _createTag(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_circle,
-                              size: 18,
-                              color:
-                                  Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Text('新建属性标签',
-                              style: TextStyle(
-                                color:
-                                    Theme.of(context).colorScheme.primary,
-                              )),
-                        ],
-                      ),
-                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   ),
-                  const Divider(),
-
-                  // 分组
-                  ..._groups.map((g) {
-                    final tags = _getTagsByGroup(g.id);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(g.name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                        ...tags.map((t) => _buildTagTile(t)),
-                        const SizedBox(height: 4),
-                      ],
-                    );
-                  }),
-
-                  // 未分组
-                  if (ungrouped.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 4),
-                      child: Text('未分组',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                    ...ungrouped.map((t) => _buildTagTile(t)),
-                  ],
-                ],
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                ),
               ),
+            Expanded(child: buildTagList()),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1331,12 +1544,27 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
   int? _selectedId;
   List<Project> _allProjects = [];
   List<ProjectGroup> _groups = [];
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<Project> get _filteredProjects {
+    if (_searchQuery.isEmpty) return _allProjects;
+    final q = _searchQuery.toLowerCase();
+    return _allProjects.where((p) =>
+        p.name.toLowerCase().contains(q)).toList();
+  }
 
   @override
   void initState() {
     super.initState();
     _selectedId = widget.selectedProjectId;
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -1346,33 +1574,66 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
   }
 
   Future<void> _createProject({int? groupId}) async {
-    final controller = TextEditingController();
+    final nameController = TextEditingController();
+    int? selectedGroupId = groupId;
+
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新建项目'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入项目名称',
-            border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('新建项目'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '输入项目名称',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (v) => Navigator.pop(ctx, v),
+              ),
+              if (groupId == null && _groups.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int?>(
+                  value: selectedGroupId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '所属分组（可选）',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('不分组'),
+                    ),
+                    ..._groups.map((g) => DropdownMenuItem<int?>(
+                      value: g.id,
+                      child: Text(g.name),
+                    )),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedGroupId = v),
+                ),
+              ],
+            ],
           ),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
+              child: const Text('创建'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
     if (name != null && name.isNotEmpty) {
       final newProject = await _db.createProject(name,
-          groupId: groupId, spaceId: widget.spaceId);
+          groupId: selectedGroupId, spaceId: widget.spaceId);
       setState(() {
         _allProjects.add(newProject);
         _selectedId = newProject.id;
@@ -1385,102 +1646,151 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final ungrouped = _getProjectsByGroup(null);
+    final filtered = _filteredProjects;
+
+    Widget buildProjectList() {
+      if (_searchQuery.isNotEmpty) {
+        if (filtered.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('没有匹配的项目', style: TextStyle(color: Colors.grey)),
+          );
+        }
+        return ListView(
+          children: filtered.map((p) => RadioListTile<int>(
+            title: Text(p.name),
+            value: p.id!,
+            groupValue: _selectedId,
+            onChanged: (v) => setState(() => _selectedId = v),
+            dense: true,
+          )).toList(),
+        );
+      }
+      if (_allProjects.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('还没有项目', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: () => _createProject(),
+                child: const Text('创建第一个项目'),
+              ),
+            ],
+          ),
+        );
+      }
+      return ListView(
+        children: [
+          InkWell(
+            onTap: () => _createProject(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.add_circle, size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text('新建项目', style: TextStyle(color: theme.colorScheme.primary)),
+                ],
+              ),
+            ),
+          ),
+          const Divider(),
+          RadioListTile<int?>(
+            title: const Text('（不选项目）'),
+            value: null,
+            groupValue: _selectedId,
+            onChanged: (v) => setState(() => _selectedId = v),
+            dense: true,
+          ),
+          ..._groups.map((g) {
+            final projects = _getProjectsByGroup(g.id);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                      GestureDetector(
+                        onTap: () => _createProject(groupId: g.id),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add_circle_outline, size: 14, color: theme.colorScheme.primary),
+                            const SizedBox(width: 2),
+                            Text('在该分组下新建', style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...projects.map((p) => RadioListTile<int>(
+                  title: Text(p.name),
+                  value: p.id!,
+                  groupValue: _selectedId,
+                  onChanged: (v) => setState(() => _selectedId = v),
+                  dense: true,
+                )),
+              ],
+            );
+          }),
+          if (ungrouped.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('未分组', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ...ungrouped.map((p) => RadioListTile<int>(
+              title: Text(p.name),
+              value: p.id!,
+              groupValue: _selectedId,
+              onChanged: (v) => setState(() => _selectedId = v),
+              dense: true,
+            )),
+          ],
+        ],
+      );
+    }
 
     return AlertDialog(
       title: const Text('选择项目'),
       content: SizedBox(
         width: double.maxFinite,
-        child: _allProjects.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('还没有项目',
-                        style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    FilledButton.tonal(
-                      onPressed: () => _createProject(),
-                      child: const Text('创建第一个项目'),
-                    ),
-                  ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_allProjects.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: '搜索项目...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  ),
+                  onChanged: (v) => setState(() => _searchQuery = v),
                 ),
-              )
-            : ListView(
-                children: [
-                  InkWell(
-                    onTap: () => _createProject(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_circle,
-                              size: 18,
-                              color:
-                                  Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Text('新建项目',
-                              style: TextStyle(
-                                color:
-                                    Theme.of(context).colorScheme.primary,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const Divider(),
-
-                  // 无项目（清除选择）
-                  RadioListTile<int?>(
-                    title: const Text('（不选项目）'),
-                    value: null,
-                    groupValue: _selectedId,
-                    onChanged: (v) => setState(() => _selectedId = v),
-                    dense: true,
-                  ),
-
-                  // 分组
-                  ..._groups.map((g) {
-                    final projects = _getProjectsByGroup(g.id);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(g.name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                        ...projects.map((p) => RadioListTile<int>(
-                              title: Text(p.name),
-                              value: p.id!,
-                              groupValue: _selectedId,
-                              onChanged: (v) =>
-                                  setState(() => _selectedId = v),
-                              dense: true,
-                            )),
-                      ],
-                    );
-                  }),
-
-                  // 未分组
-                  if (ungrouped.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 4),
-                      child: Text('未分组',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                    ...ungrouped.map((p) => RadioListTile<int>(
-                          title: Text(p.name),
-                          value: p.id!,
-                          groupValue: _selectedId,
-                          onChanged: (v) =>
-                              setState(() => _selectedId = v),
-                          dense: true,
-                        )),
-                  ],
-                ],
               ),
+            Expanded(child: buildProjectList()),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1492,10 +1802,8 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
             if (_selectedId == null) {
               Navigator.pop(context);
             } else {
-              final p = _allProjects.firstWhere(
-                  (p) => p.id == _selectedId);
-              Navigator.pop(context,
-                  MapEntry<int, String>(p.id!, p.name));
+              final p = _allProjects.firstWhere((p) => p.id == _selectedId);
+              Navigator.pop(context, MapEntry<int, String>(p.id!, p.name));
             }
           },
           child: const Text('确定'),

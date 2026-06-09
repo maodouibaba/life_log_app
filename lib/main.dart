@@ -43,6 +43,17 @@ void main() async {
   runApp(const LifeLogApp());
 }
 
+/// 根据平台返回适合的中文字体
+/// - Windows: 微软雅黑（系统字体，中英文都清晰）
+/// - macOS: 使用系统默认（苹方）
+/// - 其他平台：不指定（使用系统默认）
+String? _getPlatformFont() {
+  if (!kIsWeb && Platform.isWindows) {
+    return 'Microsoft YaHei';
+  }
+  return null;
+}
+
 class LifeLogApp extends StatefulWidget {
   const LifeLogApp({super.key});
 
@@ -84,6 +95,8 @@ class _LifeLogAppState extends State<LifeLogApp> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.grey[800],
         ),
+        // Windows 使用微软雅黑，其他平台用系统字体
+        fontFamily: _getPlatformFont(),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -95,6 +108,7 @@ class _LifeLogAppState extends State<LifeLogApp> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: Color(0xFF2C2C2C),
         ),
+        fontFamily: _getPlatformFont(),
       ),
       themeMode: ThemeSettings().mode,
       home: LockScreen(child: const _AppEntry()),

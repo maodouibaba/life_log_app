@@ -44,6 +44,26 @@ class SyncService {
   static const String _dirName = '生活记录备份';
   static const String _prefix = 'sync_';
 
+  // 同步模式：覆写 或 合并
+  static const String modeMerge = 'merge';
+  static const String modeOverwrite = 'overwrite';
+
+  /// 获取当前同步模式（默认覆写）
+  static Future<String> getSyncMode() async {
+    final db = AppDatabase();
+    try {
+      return await db.getSetting('${_prefix}mode') ?? modeOverwrite;
+    } catch (_) {
+      return modeOverwrite;
+    }
+  }
+
+  /// 设置同步模式
+  static Future<void> setSyncMode(String mode) async {
+    final db = AppDatabase();
+    await db.setSetting('${_prefix}mode', mode);
+  }
+
   // ==================== 设置持久化 ====================
 
   /// 读取配置，未配置时返回 null

@@ -1362,6 +1362,146 @@ class AppDatabase {
     }
   }
 
+  /// 从 JSON 合并导入数据（保留本地已有数据，合并互补，冲突以更新者为准）
+  Future<Map<String, int>> mergeFromJson(String jsonStr) async {
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final db = await database;
+
+    int addedEntries = 0;
+    int updatedEntries = 0;
+    int addedTags = 0;
+
+    await db.transaction((txn) async {
+      // ======== 合并入口 ========
+      final incomingSpaces = data['spaces'] as List<dynamic>? ?? [];
+      final existingSpaces = await txn.query('spaces');
+      final existingSpaceIds = existingSpaces.map((m) => m['id'] as int).toSet();
+      for (final item in incomingSpaces) {
+        final m = item as Map<String, dynamic>;
+        final id = m['id'] as int;
+        if (!existingSpaceIds.contains(id)) {
+          await txn.insert('spaces', m);
+        }
+      }
+
+      // ======== 合并树状标签 ========
+      final incomingTags = data['tags'] as List<dynamic>? ?? [];
+      final existingTags = await txn.query('tags');
+      final existingTagIds = existingTags.map((m) => m['id'] as int).toSet();
+      for (final item in incomingTags) {
+        final m = item as Map<String, dynamic>;
+        final id = m['id'] as int;
+        if (!existingTagIds.contains(id)) {
+          await txn.insert('tags', m);
+          addedTags++;
+        }
+      }
+
+      // ======== 合并项目分组 ========
+      final incomingPG = data['project_groups'] as List<dynamic>? ?? [];
+      final existingPG = await txn.query('project_groups');
+      final existingPGIds = existingPG.map((m) => m['id'] as int).toSet();
+      for (final item in incomingPG) {
+        final m = item as Map<String, dynamic>;
+        if (!existingPGIds.contains(m['id'] as int)) {
+          await txn.insert('project_groups', m);
+        }
+      }
+
+      // ======== 合并项目 ========
+      final incomingProjects = data['projects'] as List<dynamic>? ?? [];
+      final existingProjects = await txn.query('projects');
+      final existingProjectIds = existingProjects.map((m) => m['id'] as int).toSet();
+      for (final item in incomingProjects) {
+        final m = item as Map<String, dynamic>;
+        if (!existingProjectIds.contains(m['id'] as int)) {
+          await txn.insert('projects', m);
+        }
+      }
+
+      // ======== 合并属性标签分组 ========
+      final incomingATG = data['attribute_tag_groups'] as List<dynamic>? ?? [];
+      final existingATG = await txn.query('attribute_tag_groups');
+      final existingATGIds = existingATG.map((m) => m['id'] as int).toSet();
+      for (final item in incomingATG) {
+        final m = item as Map<String, dynamic>;
+        if (!existingATGIds.contains(m['id'] as int)) {
+          await txn.insert('attribute_tag_groups', m);
+        }
+      }
+
+      // ======== 合并属性标签 ========
+      final incomingAT = data['attribute_tags'] as List<dynamic>? ?? [];
+      final existingAT = await txn.query('attribute_tags');
+      final existingATIds = existingAT.map((m) => m['id'] as int).toSet();
+      for (final item in incomingAT) {
+        final m = item as Map<String, dynamic>;
+        if (!existingATIds.contains(m['id'] as int)) {
+          await txn.insert('attribute_tags', m);
+        }
+      }
+
+      // ======== 合并记录（按 updated_at 判断冲突） ========
+      final incomingEntries = data['entries'] as List<dynamic>? ?? [];
+      final existingEntries = await txn.query('entries');
+      final existingEntryMap = <int, Map<String, dynamic>>{};
+      for (final e in existingEntries) {
+        existingEntryMap[e['id'] as int] = e;
+      }
+
+      for (final item in incomingEntries) {
+        final m = item as Map<String, dynamic>;
+        final id = m['id'] as int;
+        if (existingEntryMap.containsKey(id)) {
+          // 冲突：保留 updated_at 更新的那个
+          final localUpdated = DateTime.parse(existingEntryMap[id]!['updated_at'] as String);
+          final remoteUpdated = DateTime.parse(m['updated_at'] as String);
+          if (remoteUpdated.isAfter(localUpdated)) {
+            await txn.update('entries', m, where: 'id = ?', whereArgs: [id]);
+            updatedEntries++;
+          }
+        } else {
+          await txn.insert('entries', m);
+          addedEntries++;
+        }
+      }
+
+      // ======== 合并记录-树状标签关联 ========
+      final incomingET = data['entry_tags'] as List<dynamic>? ?? [];
+      final existingET = await txn.query('entry_tags');
+      final existingETSet = existingET
+          .map((m) => '${m['entry_id']}-${m['tag_id']}')
+          .toSet();
+      for (final item in incomingET) {
+        final m = item as Map<String, dynamic>;
+        final key = '${m['entry_id']}-${m['tag_id']}';
+        if (!existingETSet.contains(key)) {
+          await txn.insert('entry_tags', m);
+        }
+      }
+
+      // ======== 合并记录-属性标签关联 ========
+      final incomingEAT = data['entry_attribute_tags'] as List<dynamic>? ?? [];
+      final existingEAT = await txn.query('entry_attribute_tags');
+      final existingEATSet = existingEAT
+          .map((m) => '${m['entry_id']}-${m['attribute_tag_id']}')
+          .toSet();
+      for (final item in incomingEAT) {
+        final m = item as Map<String, dynamic>;
+        final key = '${m['entry_id']}-${m['attribute_tag_id']}';
+        if (!existingEATSet.contains(key)) {
+          await txn.insert('entry_attribute_tags', m);
+        }
+      }
+    });
+
+    return {
+      'added_entries': addedEntries,
+      'updated_entries': updatedEntries,
+      'added_tags': addedTags,
+    };
+  }
+
   /// 从 JSON 导入数据（先清空所有表，再写入）
   Future<void> importFromJson(String jsonStr) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
