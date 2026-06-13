@@ -11,6 +11,7 @@ import 'project_manager_page.dart';
 import 'list_view_page.dart';
 import 'data_migration_page.dart';
 import 'sync_settings_page.dart';
+import 'ai_summary_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
@@ -618,6 +619,15 @@ class _HomePageState extends State<HomePage> {
             tooltip: '更多',
             onSelected: (value) async {
               switch (value) {
+                case 'ai_summary':
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AISummaryPage(spaceId: _spaceId),
+                    ),
+                  );
+                  break;
                 case 'export_excel':
                   await _exportToExcel();
                   break;
@@ -656,6 +666,15 @@ class _HomePageState extends State<HomePage> {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'ai_summary',
+                child: ListTile(
+                  leading: Icon(Icons.auto_awesome),
+                  title: Text('AI 总结'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               const PopupMenuItem(
                 value: 'export_excel',
                 child: ListTile(

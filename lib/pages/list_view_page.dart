@@ -3,7 +3,9 @@ import '../database/app_database.dart';
 import '../models/entry.dart';
 import '../models/tag.dart';
 import '../models/project.dart';
+import '../models/project_group.dart';
 import '../models/attribute_tag.dart';
+import '../models/attribute_tag_group.dart';
 import '../services/undo_manager.dart';
 import '../widgets/undo_button.dart';
 import '../utils/text_formatter.dart';
@@ -206,6 +208,7 @@ class _ListViewPageState extends State<ListViewPage> {
 
   Future<void> _pickAttributeTag() async {
     _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
+    final groups = await _db.getAllAttributeTagGroups(_spaceId);
     if (!mounted) return;
 
     final nav = Navigator.of(context);
@@ -214,6 +217,7 @@ class _ListViewPageState extends State<ListViewPage> {
       barrierDismissible: true,
       builder: (ctx) => _MultiAttributeTagFilterDialog(
         tags: _allAttributeTags,
+        groups: groups,
         initialSelectedIds: _filterAttributeTagIds,
         onClose: (selected) {
           if (selected != null) {
@@ -235,6 +239,7 @@ class _ListViewPageState extends State<ListViewPage> {
 
   Future<void> _pickProject() async {
     _allProjects = await _db.getAllProjects(spaceId: _spaceId);
+    final groups = await _db.getAllProjectGroups(_spaceId);
     if (!mounted) return;
 
     final nav = Navigator.of(context);
@@ -243,6 +248,7 @@ class _ListViewPageState extends State<ListViewPage> {
       barrierDismissible: true,
       builder: (ctx) => _MultiProjectFilterDialog(
         projects: _allProjects,
+        groups: groups,
         initialSelectedIds: _filterProjectIds,
         onClose: (selected) {
           if (selected != null) {
@@ -521,6 +527,7 @@ class _ListViewPageState extends State<ListViewPage> {
   Future<void> _batchReplaceAttributeTags() async {
     if (_selectedIds.isEmpty) return;
     _allAttributeTags = await _db.getAllAttributeTags(_spaceId);
+    final groups = await _db.getAllAttributeTagGroups(_spaceId);
     if (!mounted) return;
 
     final nav = Navigator.of(context);
@@ -529,6 +536,7 @@ class _ListViewPageState extends State<ListViewPage> {
       barrierDismissible: true,
       builder: (ctx) => _MultiAttributeTagFilterDialog(
         tags: _allAttributeTags,
+        groups: groups,
         initialSelectedIds: const <int>{},
         onClose: (selected) {
           if (selected != null) {
@@ -716,36 +724,40 @@ class _ListViewPageState extends State<ListViewPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 第一行：筛选按钮
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      _FilterChip(
-                        icon: Icons.date_range,
-                        label: '日期',
-                        active: _startDate != null,
-                        onTap: _selectMode ? null : _pickDate,
-                      ),
-                      _FilterChip(
-                        icon: Icons.label,
-                        label: '树状标签',
-                        active: _filterTagIds.isNotEmpty,
-                        onTap: _selectMode ? null : _pickTag,
-                      ),
-                      _FilterChip(
-                        icon: Icons.turned_in_not,
-                        label: '属性标签',
-                        active: _filterAttributeTagIds.isNotEmpty,
-                        onTap: _selectMode ? null : _pickAttributeTag,
-                      ),
-                      _FilterChip(
-                        icon: Icons.folder_outlined,
-                        label: '项目',
-                        active: _filterProjectIds.isNotEmpty,
-                        onTap: _selectMode ? null : _pickProject,
-                      ),
-                    ],
+                  // 第一行：筛选按钮（水平滚动，避免换行）
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _FilterChip(
+                          icon: Icons.date_range,
+                          label: '日期',
+                          active: _startDate != null,
+                          onTap: _selectMode ? null : _pickDate,
+                        ),
+                        const SizedBox(width: 6),
+                        _FilterChip(
+                          icon: Icons.label,
+                          label: '树状标签',
+                          active: _filterTagIds.isNotEmpty,
+                          onTap: _selectMode ? null : _pickTag,
+                        ),
+                        const SizedBox(width: 6),
+                        _FilterChip(
+                          icon: Icons.turned_in_not,
+                          label: '属性标签',
+                          active: _filterAttributeTagIds.isNotEmpty,
+                          onTap: _selectMode ? null : _pickAttributeTag,
+                        ),
+                        const SizedBox(width: 6),
+                        _FilterChip(
+                          icon: Icons.folder_outlined,
+                          label: '项目',
+                          active: _filterProjectIds.isNotEmpty,
+                          onTap: _selectMode ? null : _pickProject,
+                        ),
+                      ],
+                    ),
                   ),
                   // 第二行：分组方式
                   if (_entries.isNotEmpty) ...[
@@ -1112,51 +1124,87 @@ class _GroupSectionState extends State<_GroupSection> {
             );
           }
 
-          return ListTile(
-            title: Text(
-              entry.title ?? TextFormatter.stripMarkdown(entry.content),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight:
-                    entry.title != null ? FontWeight.w600 : null,
-              ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.formatDateTime(entry.createdAt),
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: widget.theme.colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 4),
-                Row(
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => widget.onTapEntry(entry),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (entry.projectName != null)
+                    // 事项简介
+                    if (entry.title != null && entry.title!.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color:
-                                widget.theme.colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            entry.projectName!,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: widget
-                                  .theme.colorScheme.onPrimaryContainer,
-                            ),
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          entry.title!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: widget.theme.colorScheme.onSurface,
                           ),
                         ),
                       ),
+                    // 详细情况（最多3行，去除格式符号）
+                    Text(
+                      TextFormatter.stripMarkdown(entry.content),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        color: entry.title != null && entry.title!.isNotEmpty
+                            ? widget.theme.colorScheme.onSurfaceVariant
+                            : widget.theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // 时间 + 项目 + 标签
+                    Row(
+                      children: [
+                        Text(
+                          widget.formatDateTime(entry.createdAt),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: widget.theme.colorScheme.onSurfaceVariant),
+                        ),
+                        if (entry.projectName != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: widget.theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              entry.projectName!,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: widget
+                                    .theme.colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline,
+                              size: 16, color: widget.theme.colorScheme.error),
+                          onPressed: () => widget.onDelete(entry),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        ),
+                      ],
+                    ),
                     if (entry.tags.isNotEmpty)
-                      Expanded(
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
                         child: Wrap(
                           spacing: 4,
                           runSpacing: 2,
@@ -1165,8 +1213,7 @@ class _GroupSectionState extends State<_GroupSection> {
                                     t.name,
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color:
-                                          widget.theme.colorScheme.primary,
+                                      color: widget.theme.colorScheme.primary,
                                     ),
                                   ))
                               .toList(),
@@ -1174,16 +1221,8 @@ class _GroupSectionState extends State<_GroupSection> {
                       ),
                   ],
                 ),
-              ],
+              ),
             ),
-            trailing: IconButton(
-              icon: Icon(Icons.delete_outline,
-                  size: 18, color: widget.theme.colorScheme.error),
-              onPressed: () => widget.onDelete(entry),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            onTap: () => widget.onTapEntry(entry),
           );
         }),
       ],
@@ -1325,136 +1364,394 @@ class _MultiTagFilterDialog extends StatelessWidget {
   }
 }
 
-/// 属性标签多选弹窗（用于筛选，有初始选中状态）
-class _MultiAttributeTagFilterDialog extends StatelessWidget {
+/// 属性标签多选弹窗（用于筛选，有初始选中状态，按分组显示，可折叠）
+class _MultiAttributeTagFilterDialog extends StatefulWidget {
   final List<AttributeTag> tags;
+  final List<AttributeTagGroup> groups;
   final Set<int> initialSelectedIds;
   final void Function(Set<int>?) onClose;
 
   const _MultiAttributeTagFilterDialog({
     required this.tags,
+    required this.groups,
     required this.initialSelectedIds,
     required this.onClose,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final selectedIds = Set<int>.from(initialSelectedIds);
+  State<_MultiAttributeTagFilterDialog> createState() => _MultiAttributeTagFilterDialogState();
+}
 
-    return StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text('筛选属性标签（已选 ${selectedIds.length}）'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: tags.isEmpty
-              ? const Text('暂无属性标签')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: tags.length,
-                  itemBuilder: (context, index) {
-                    final t = tags[index];
-                    final isSelected = selectedIds.contains(t.id);
-                    return ListTile(
-                      leading: Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => setState(() {
-                          if (isSelected) {
-                            selectedIds.remove(t.id!);
-                          } else {
-                            selectedIds.add(t.id!);
-                          }
-                        }),
-                      ),
-                      title: Text(t.name),
-                      onTap: () => setState(() {
-                        if (isSelected) {
-                          selectedIds.remove(t.id!);
-                        } else {
-                          selectedIds.add(t.id!);
-                        }
-                      }),
-                      dense: true,
-                    );
-                  },
+class _MultiAttributeTagFilterDialogState extends State<_MultiAttributeTagFilterDialog> {
+  late Set<int> _selectedIds;
+  final Set<int> _collapsedGroupIds = {};
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<AttributeTag> _getTagsByGroup(int? groupId) =>
+      widget.tags.where((t) => t.groupId == groupId).toList();
+
+  List<AttributeTag> get _filteredTags {
+    if (_searchQuery.isEmpty) return widget.tags;
+    final q = _searchQuery.toLowerCase();
+    return widget.tags.where((t) =>
+        t.name.toLowerCase().contains(q)).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set<int>.from(widget.initialSelectedIds);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ungrouped = _getTagsByGroup(null);
+    final filtered = _filteredTags;
+    final isSearching = _searchQuery.isNotEmpty;
+
+    // 搜索模式：扁平列表
+    Widget buildSearchResults() {
+      if (filtered.isEmpty) {
+        return const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('没有匹配的属性标签', style: TextStyle(color: Colors.grey)),
+        );
+      }
+      return ListView(
+        children: filtered.map((t) => _buildTile(t)).toList(),
+      );
+    }
+
+    return AlertDialog(
+      title: Text('筛选属性标签（已选 ${_selectedIds.length}）'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          children: [
+            // 搜索框
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '搜索属性标签...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
+            // 内容
+            Expanded(
+              child: isSearching
+                  ? buildSearchResults()
+                  : (widget.tags.isEmpty
+                      ? const Center(child: Text('暂无属性标签', style: TextStyle(color: Colors.grey)))
+                      : ListView(
+                          children: [
+                            ...widget.groups.map((g) {
+                              final groupTags = _getTagsByGroup(g.id);
+                              if (groupTags.isEmpty) return const SizedBox.shrink();
+                              final isCollapsed = _collapsedGroupIds.contains(g.id);
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  InkWell(
+                                    onTap: () => setState(() {
+                                      if (isCollapsed) {
+                                        _collapsedGroupIds.remove(g.id);
+                                      } else {
+                                        _collapsedGroupIds.add(g.id!);
+                                      }
+                                    }),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(g.name,
+                                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                                          Text('（${groupTags.length}）',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isCollapsed)
+                                    ...groupTags.map((t) => _buildTile(t)),
+                                  const SizedBox(height: 4),
+                                ],
+                              );
+                            }),
+                            if (ungrouped.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text('未分组',
+                                    style: TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                              ...ungrouped.map((t) => _buildTile(t)),
+                            ],
+                          ],
+                        )),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => onClose(null),
-            child: const Text('取消')),
-          TextButton(
-            onPressed: () => onClose(Set<int>.from(selectedIds)),
-            child: const Text('确定'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => widget.onClose(null),
+          child: const Text('取消')),
+        TextButton(
+          onPressed: () => widget.onClose(Set<int>.from(_selectedIds)),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTile(AttributeTag tag) {
+    final isSelected = _selectedIds.contains(tag.id);
+    return ListTile(
+      dense: true,
+      leading: Checkbox(
+        value: isSelected,
+        onChanged: (_) => setState(() {
+          if (isSelected) {
+            _selectedIds.remove(tag.id!);
+          } else {
+            _selectedIds.add(tag.id!);
+          }
+        }),
+      ),
+      title: Text(tag.name),
+      onTap: () => setState(() {
+        if (isSelected) {
+          _selectedIds.remove(tag.id!);
+        } else {
+          _selectedIds.add(tag.id!);
+        }
+      }),
     );
   }
 }
 
-/// 项目多选弹窗（用于筛选，有初始选中状态）
-class _MultiProjectFilterDialog extends StatelessWidget {
+/// 项目多选弹窗（用于筛选，有初始选中状态，按分组显示，可折叠）
+class _MultiProjectFilterDialog extends StatefulWidget {
   final List<Project> projects;
+  final List<ProjectGroup> groups;
   final Set<int> initialSelectedIds;
   final void Function(Set<int>?) onClose;
 
   const _MultiProjectFilterDialog({
     required this.projects,
+    required this.groups,
     required this.initialSelectedIds,
     required this.onClose,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final selectedIds = Set<int>.from(initialSelectedIds);
+  State<_MultiProjectFilterDialog> createState() => _MultiProjectFilterDialogState();
+}
 
-    return StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text('筛选项目（已选 ${selectedIds.length}）'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: projects.isEmpty
-              ? const Text('暂无项目')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: projects.length,
-                  itemBuilder: (context, index) {
-                    final p = projects[index];
-                    final isSelected = selectedIds.contains(p.id);
-                    return ListTile(
-                      leading: Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => setState(() {
-                          if (isSelected) {
-                            selectedIds.remove(p.id!);
-                          } else {
-                            selectedIds.add(p.id!);
-                          }
-                        }),
-                      ),
-                      title: Text(p.name),
-                      onTap: () => setState(() {
-                        if (isSelected) {
-                          selectedIds.remove(p.id!);
-                        } else {
-                          selectedIds.add(p.id!);
-                        }
-                      }),
-                      dense: true,
-                    );
-                  },
+class _MultiProjectFilterDialogState extends State<_MultiProjectFilterDialog> {
+  late Set<int> _selectedIds;
+  final Set<int> _collapsedGroupIds = {};
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<Project> _getProjectsByGroup(int? groupId) =>
+      widget.projects.where((p) => p.groupId == groupId).toList();
+
+  List<Project> get _filteredProjects {
+    if (_searchQuery.isEmpty) return widget.projects;
+    final q = _searchQuery.toLowerCase();
+    return widget.projects.where((p) =>
+        p.name.toLowerCase().contains(q)).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set<int>.from(widget.initialSelectedIds);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ungrouped = _getProjectsByGroup(null);
+    final filtered = _filteredProjects;
+    final isSearching = _searchQuery.isNotEmpty;
+
+    Widget buildSearchResults() {
+      if (filtered.isEmpty) {
+        return const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('没有匹配的项目', style: TextStyle(color: Colors.grey)),
+        );
+      }
+      return ListView(
+        children: filtered.map((p) => _buildTile(p)).toList(),
+      );
+    }
+
+    return AlertDialog(
+      title: Text('筛选项目（已选 ${_selectedIds.length}）'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          children: [
+            // 搜索框
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '搜索项目...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
+            Expanded(
+              child: isSearching
+                  ? buildSearchResults()
+                  : (widget.projects.isEmpty
+                      ? const Center(child: Text('暂无项目', style: TextStyle(color: Colors.grey)))
+                      : ListView(
+                          children: [
+                            ...widget.groups.map((g) {
+                              final groupProjects = _getProjectsByGroup(g.id);
+                              if (groupProjects.isEmpty) return const SizedBox.shrink();
+                              final isCollapsed = _collapsedGroupIds.contains(g.id);
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  InkWell(
+                                    onTap: () => setState(() {
+                                      if (isCollapsed) {
+                                        _collapsedGroupIds.remove(g.id);
+                                      } else {
+                                        _collapsedGroupIds.add(g.id!);
+                                      }
+                                    }),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(g.name,
+                                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                                          Text('（${groupProjects.length}）',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isCollapsed)
+                                    ...groupProjects.map((p) => _buildTile(p)),
+                                  const SizedBox(height: 4),
+                                ],
+                              );
+                            }),
+                            if (ungrouped.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text('未分组',
+                                    style: TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                              ...ungrouped.map((p) => _buildTile(p)),
+                            ],
+                          ],
+                        )),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => onClose(null),
-            child: const Text('取消')),
-          TextButton(
-            onPressed: () => onClose(Set<int>.from(selectedIds)),
-            child: const Text('确定'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => widget.onClose(null),
+          child: const Text('取消')),
+        TextButton(
+          onPressed: () => widget.onClose(Set<int>.from(_selectedIds)),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTile(Project project) {
+    final isSelected = _selectedIds.contains(project.id);
+    return ListTile(
+      dense: true,
+      leading: Checkbox(
+        value: isSelected,
+        onChanged: (_) => setState(() {
+          if (isSelected) {
+            _selectedIds.remove(project.id!);
+          } else {
+            _selectedIds.add(project.id!);
+          }
+        }),
+      ),
+      title: Text(project.name),
+      onTap: () => setState(() {
+        if (isSelected) {
+          _selectedIds.remove(project.id!);
+        } else {
+          _selectedIds.add(project.id!);
+        }
+      }),
     );
   }
 }

@@ -51,6 +51,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   final AppDatabase _db = AppDatabase();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  final _contactPersonController = TextEditingController();
+  final _followUpController = TextEditingController();
 
   int get _spaceId => widget.spaceId;
   bool get _isEditMode => widget.entry != null;
@@ -71,6 +73,10 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   // 保存状态
   bool _saving = false;
+
+  // 对接人 & 后续待办
+  String _contactPerson = '';
+  String _followUp = '';
 
   // 标记初始标签是否已加载（编辑模式专用）
   bool _initialTagsLoaded = false;
@@ -109,6 +115,10 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       _contentController.text = widget.entry!.content;
       _selectedProjectId = widget.entry!.projectId;
       _selectedProjectName = widget.entry!.projectName;
+      _contactPerson = widget.entry!.contactPerson ?? '';
+      _contactPersonController.text = _contactPerson;
+      _followUp = widget.entry!.followUp ?? '';
+      _followUpController.text = _followUp;
       // 从已有树状标签中找出最深的那个作为叶标签
       // 属性标签
       _selectedAttributeTagIds =
@@ -311,7 +321,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       builder: (ctx) {
         bool previewMode = false;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
             title: Row(
               children: [
                 const Expanded(child: Text('详细情况')),
@@ -330,97 +341,114 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
             content: SizedBox(
               width: double.maxFinite,
               height: 400,
-              child: Column(
+              child: Stack(
                 children: [
-                  // 格式化工具栏（仅编辑模式显示）
-                  if (!previewMode)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Theme.of(ctx).colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
+                    // 编辑模式：文本框（用 Offstage 保持挂载，避免销毁重建导致输入异常）
+                    Offstage(
+                      offstage: previewMode,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 400,
+                        child: Column(
                           children: [
-                            _FormatBtn(
-                              icon: Icons.format_bold,
-                              tooltip: '粗体 (**text**)',
-                              onTap: () => _insertFormatting(controller, '**', '**', hint: '粗体文字'),
-                            ),
-                            const SizedBox(width: 2),
-                            _FormatBtn(
-                              icon: Icons.format_italic,
-                              tooltip: '斜体 (*text*)',
-                              onTap: () => _insertFormatting(controller, '*', '*', hint: '斜体文字'),
-                            ),
-                            const SizedBox(width: 2),
-                            _FormatBtn(
-                              icon: Icons.format_list_bulleted,
-                              tooltip: '无序列表',
-                              onTap: () => _insertFormatting(controller, '- ', ''),
-                            ),
-                            const SizedBox(width: 2),
-                            _FormatBtn(
-                              icon: Icons.format_list_numbered,
-                              tooltip: '有序列表',
-                              onTap: () => _insertFormatting(controller, '1. ', ''),
-                            ),
-                            const SizedBox(width: 2),
-                            _FormatBtn(
-                              icon: Icons.title,
-                              tooltip: '标题 (#)',
-                              onTap: () => _insertFormatting(controller, '# ', ''),
-                            ),
-                            if (AISettings().enabled && AISettings().hasKey) ...[
-                              const SizedBox(width: 4),
-                              Container(width: 1, height: 18, color: Theme.of(ctx).colorScheme.outlineVariant),
-                              const SizedBox(width: 4),
-                              _AIBtn(
-                                controller: controller,
+                            // 格式化工具栏
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Theme.of(ctx).colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                            ],
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _FormatBtn(
+                                      icon: Icons.format_bold,
+                                      tooltip: '粗体 (**text**)',
+                                      onTap: () => _insertFormatting(controller, '**', '**', hint: '粗体文字'),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    _FormatBtn(
+                                      icon: Icons.format_italic,
+                                      tooltip: '斜体 (*text*)',
+                                      onTap: () => _insertFormatting(controller, '*', '*', hint: '斜体文字'),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    _FormatBtn(
+                                      icon: Icons.format_list_bulleted,
+                                      tooltip: '无序列表',
+                                      onTap: () => _insertFormatting(controller, '- ', ''),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    _FormatBtn(
+                                      icon: Icons.format_list_numbered,
+                                      tooltip: '有序列表',
+                                      onTap: () => _insertFormatting(controller, '1. ', ''),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    _FormatBtn(
+                                      icon: Icons.title,
+                                      tooltip: '标题 (#)',
+                                      onTap: () => _insertFormatting(controller, '# ', ''),
+                                    ),
+                                    if (AISettings().enabled && AISettings().hasKey) ...[
+                                      const SizedBox(width: 4),
+                                      Container(width: 1, height: 18, color: Theme.of(ctx).colorScheme.outlineVariant),
+                                      const SizedBox(width: 4),
+                                      _AIBtn(
+                                        controller: controller,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: controller,
+                                autofocus: true,
+                                maxLines: null,
+                                expands: true,
+                                textAlignVertical: TextAlignVertical.top,
+                                decoration: const InputDecoration(
+                                  hintText: '在此输入详细情况...',
+                                  border: OutlineInputBorder(),
+                                  alignLabelWithHint: true,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
-                  const SizedBox(height: 8),
-                  // 编辑模式：文本框 / 预览模式：渲染效果
-                  Expanded(
-                    child: previewMode
-                        ? SingleChildScrollView(
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: controller.text.trim().isEmpty
-                                  ? Text('暂无内容',
-                                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant))
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: TextFormatter.render(
-                                        controller.text,
-                                        baseStyle: TextStyle(
-                                          fontSize: 15,
-                                          color: Theme.of(ctx).colorScheme.onSurface,
-                                        ),
+                    // 预览模式：渲染效果
+                    Offstage(
+                      offstage: !previewMode,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 400,
+                        child: SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: controller.text.trim().isEmpty
+                                ? Text('暂无内容',
+                                    style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant))
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: TextFormatter.render(
+                                      controller.text,
+                                      baseStyle: TextStyle(
+                                        fontSize: 15,
+                                        color: Theme.of(ctx).colorScheme.onSurface,
                                       ),
                                     ),
-                            ),
-                          )
-                        : TextField(
-                            controller: controller,
-                            autofocus: true,
-                            maxLines: null,
-                            expands: true,
-                            textAlignVertical: TextAlignVertical.top,
-                            decoration: const InputDecoration(
-                              hintText: '在此输入详细情况...',
-                              border: OutlineInputBorder(),
-                              alignLabelWithHint: true,
-                            ),
+                                  ),
                           ),
-                  ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -434,7 +462,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                 child: const Text('确定'),
               ),
             ],
-          ),
+            );
+          },
         );
       },
     );
@@ -464,6 +493,9 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           ? _selectedAttributeTagIds.toList()
           : null;
 
+      final cp = _contactPersonController.text.trim();
+      final fu = _followUpController.text.trim();
+
       if (_isEditMode) {
         // 记录编辑前状态用于撤销
         if (widget.entry != null) {
@@ -477,6 +509,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           attributeTagIds: attrTagIds,
           projectId: _selectedProjectId,
           createdAt: _createdAt,
+          contactPerson: cp.isNotEmpty ? cp : null,
+          followUp: fu.isNotEmpty ? fu : null,
         );
       } else {
         await _db.createEntry(
@@ -487,6 +521,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           projectId: _selectedProjectId,
           spaceId: _spaceId,
           createdAt: _createdAt,
+          contactPerson: cp.isNotEmpty ? cp : null,
+          followUp: fu.isNotEmpty ? fu : null,
         );
       }
       if (mounted) {
@@ -688,6 +724,27 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
             ],
           ),
         ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // ---- 对接人 ----
+      _buildTextField(
+        label: '对接人',
+        icon: Icons.person_outline,
+        value: _contactPerson,
+        hint: '如：张三',
+        onChanged: (v) => setState(() => _contactPerson = v),
+      ),
+      const SizedBox(height: 12),
+
+      // ---- 后续待办 ----
+      _buildTextField(
+        label: '后续待办',
+        icon: Icons.checklist_outlined,
+        value: _followUp,
+        hint: '如：下周五前回复邮件',
+        onChanged: (v) => setState(() => _followUp = v),
       ),
 
       const SizedBox(height: 20),
@@ -895,6 +952,78 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   }
 
 
+  /// 简单的文本输入行（对接人 / 后续待办）
+  Widget _buildTextField({
+    required String label,
+    required IconData icon,
+    required String value,
+    required String hint,
+    required ValueChanged<String> onChanged,
+  }) {
+    return InkWell(
+      onTap: () async {
+        final controller = TextEditingController(text: value);
+        final result = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(label),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: hint,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+        if (result != null) {
+          onChanged(result);
+        }
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context)
+              .colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: value.isNotEmpty
+                  ? Text(value, style: const TextStyle(fontSize: 14))
+                  : Text(hint,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 14)),
+            ),
+            Icon(Icons.edit_outlined,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatEditorDateTime(DateTime dt) {
     final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
     return '${dt.year}年${dt.month}月${dt.day}日 '
@@ -906,6 +1035,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _contactPersonController.dispose();
+    _followUpController.dispose();
     super.dispose();
   }
 }
@@ -1296,6 +1427,7 @@ class _AttributeTagPickerDialogState
   List<AttributeTagGroup> _groups = [];
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  final Set<int> _collapsedGroupIds = {};
 
   List<AttributeTag> get _filteredTags {
     if (_searchQuery.isEmpty) return _allTags;
@@ -1417,19 +1549,41 @@ class _AttributeTagPickerDialogState
           ),
           const Divider(),
 
-          // 分组
+          // 分组（可折叠）
           ..._groups.map((g) {
             final tags = _getTagsByGroup(g.id);
+            final isCollapsed = _collapsedGroupIds.contains(g.id);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(g.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600)),
+                InkWell(
+                  onTap: () => setState(() {
+                    if (isCollapsed) {
+                      _collapsedGroupIds.remove(g.id);
+                    } else {
+                      _collapsedGroupIds.add(g.id!);
+                    }
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(g.name,
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Text('（${tags.length}）',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
                 ),
-                ...tags.map((t) => _buildTagTile(t)),
+                if (!isCollapsed) ...tags.map((t) => _buildTagTile(t)),
                 const SizedBox(height: 4),
               ],
             );
@@ -1546,6 +1700,7 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
   List<ProjectGroup> _groups = [];
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  final Set<int> _collapsedGroupIds = {};
 
   List<Project> get _filteredProjects {
     if (_searchQuery.isEmpty) return _allProjects;
@@ -1708,35 +1863,58 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
           ),
           ..._groups.map((g) {
             final projects = _getProjectsByGroup(g.id);
+            final isCollapsed = _collapsedGroupIds.contains(g.id);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600))),
-                      GestureDetector(
-                        onTap: () => _createProject(groupId: g.id),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.add_circle_outline, size: 14, color: theme.colorScheme.primary),
-                            const SizedBox(width: 2),
-                            Text('在该分组下新建', style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
-                          ],
+                InkWell(
+                  onTap: () => setState(() {
+                    if (isCollapsed) {
+                      _collapsedGroupIds.remove(g.id);
+                    } else {
+                      _collapsedGroupIds.add(g.id!);
+                    }
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                          size: 18,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                        Text('${projects.length}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        if (!isCollapsed) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _createProject(groupId: g.id),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_circle_outline, size: 14, color: theme.colorScheme.primary),
+                                const SizedBox(width: 2),
+                                Text('在该分组下新建', style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-                ...projects.map((p) => RadioListTile<int>(
-                  title: Text(p.name),
-                  value: p.id!,
-                  groupValue: _selectedId,
-                  onChanged: (v) => setState(() => _selectedId = v),
-                  dense: true,
-                )),
+                if (!isCollapsed)
+                  ...projects.map((p) => RadioListTile<int>(
+                    title: Text(p.name),
+                    value: p.id!,
+                    groupValue: _selectedId,
+                    onChanged: (v) => setState(() => _selectedId = v),
+                    dense: true,
+                  )),
               ],
             );
           }),

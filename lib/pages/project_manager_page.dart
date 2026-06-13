@@ -5,6 +5,7 @@ import '../database/app_database.dart';
 
 /// 项目管理页面
 /// 支持分组分层管理，分组可收起展开，支持批量操作
+/// 同级拖拽排序，长按项目体可拖到其他分组
 class ProjectManagerPage extends StatefulWidget {
   final int spaceId;
 
@@ -31,6 +32,12 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   void initState() {
     super.initState();
     _loadData();
+    // 默认展开所有分组
+    _db.getAllProjectGroups(_spaceId).then((groups) {
+      for (final g in groups) {
+        if (g.id != null) _expandedGroupIds.add(g.id!);
+      }
+    });
   }
 
   Future<void> _loadData() async {
@@ -40,7 +47,33 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
   }
 
   List<Project> _getProjectsByGroup(int? groupId) =>
-      _projects.where((p) => p.groupId == groupId).toList();
+      _projects.where((p) => p.groupId == groupId).toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+  /// 重新排序同级项目
+  Future<void> _reorderInGroup(int? groupId, int oldIndex, int newIndex) async {
+    final siblings = _getProjectsByGroup(groupId);
+    if (oldIndex < newIndex) newIndex--;
+    final updated = List<Project>.from(siblings);
+    final item = updated.removeAt(oldIndex);
+    updated.insert(newIndex, item);
+    for (int i = 0; i < updated.length; i++) {
+      if (updated[i].sortOrder != i) {
+        await _db.updateProjectSortOrder(updated[i].id!, i);
+      }
+    }
+    if (item.sortOrder != newIndex) {
+      await _db.updateProjectSortOrder(item.id!, newIndex);
+    }
+    _loadData();
+  }
+
+  /// 移动项目到新分组（拖拽）
+  Future<void> _moveProjectToGroup(Project p, int? targetGroupId) async {
+    if (p.groupId == targetGroupId) return;
+    await _db.moveProjectToGroup(p.id!, targetGroupId);
+    _loadData();
+  }
 
   void _toggleSelectMode() {
     setState(() {
@@ -255,18 +288,6 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
     }
   }
 
-  /// 移动项目到分组（弹窗选择目标分组）
-  Future<void> _showMoveDialog(Project p) async {
-    final result = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => _PickProjectGroupBatchDialog(groups: _groups),
-    );
-    if (result != null) {
-      await _db.moveProjectToGroup(p.id!, result == -1 ? null : result);
-      _loadData();
-    }
-  }
-
   Future<void> _deleteProject(Project p) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -379,72 +400,190 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                       onDeleteGroup: () => _deleteGroup(g),
                       onRenameProject: _renameProject,
                       onDeleteProject: _deleteProject,
-                      onMoveProject: (p) => _showMoveDialog(p),
+                      onReorder: (oldIndex, newIndex) =>
+                          _reorderInGroup(g.id, oldIndex, newIndex),
+                      onMoveProjectToGroup: (p) =>
+                          _moveProjectToGroup(p, g.id),
                     )),
 
-                // 未分组项目
-                if (ungrouped.isNotEmpty) ...[
-                  if (_groups.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 4),
-                      child: Text('未分组',
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500)),
-                    ),
-                  ...ungrouped.map((p) => _buildProjectTile(p, theme)),
-                ],
+                // 未分组项目（同时是 DragTarget）
+                if (ungrouped.isNotEmpty || _groups.isNotEmpty)
+                  _buildUngroupedSection(theme, ungrouped),
                 const SizedBox(height: 40),
               ],
             ),
     );
   }
 
-  Widget _buildProjectTile(Project p, ThemeData theme) {
-    return ListTile(
-      dense: true,
-      leading: _selectMode
-          ? Checkbox(
-              value: _selectedIds.contains(p.id),
-              onChanged: (_) => _toggleSelect(p.id!),
-            )
-          : Icon(Icons.folder_outlined,
-              size: 18, color: theme.colorScheme.primary),
-      title: Text(p.name, style: const TextStyle(fontSize: 14)),
-      trailing: _selectMode
-          ? null
-          : PopupMenuButton<String>(
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'edit', child: Text('重命名')),
-                if (_groups.isNotEmpty)
-                  const PopupMenuItem(
-                      value: 'move', child: Text('移动到分组')),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('删除', style: TextStyle(color: Colors.red)),
+  Widget _buildUngroupedSection(ThemeData theme, List<Project> ungrouped) {
+    return DragTarget<Project>(
+      onAcceptWithDetails: (details) =>
+          _moveProjectToGroup(details.data, null),
+      builder: (context, candidateData, rejectedData) {
+        final isHovering = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.only(top: 8, bottom: 4),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isHovering
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : null,
+            borderRadius: BorderRadius.circular(8),
+            border: isHovering
+                ? Border.all(color: theme.colorScheme.primary, width: 2)
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isHovering)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.arrow_downward, size: 14,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 4),
+                      Text('释放到此处设为未分组',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.primary)),
+                    ],
+                  ),
                 ),
-              ],
-              onSelected: (v) {
-                switch (v) {
-                  case 'edit':
-                    _renameProject(p);
-                    break;
-                  case 'move':
-                    _showMoveDialog(p);
-                    break;
-                  case 'delete':
-                    _deleteProject(p);
-                    break;
-                }
-              },
-            ),
-      onTap: _selectMode ? () => _toggleSelect(p.id!) : null,
+              if (ungrouped.isNotEmpty || !isHovering)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('未分组（${ungrouped.length}）',
+                      style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500)),
+                ),
+              if (ungrouped.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text('（空）',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                )
+              else
+                ...ungrouped.map((p) => _buildProjectTile(p, theme)),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Widget _buildProjectTile(Project p, ThemeData theme) {
+    return LongPressDraggable<Project>(
+      data: p,
+      delay: const Duration(milliseconds: 300),
+      feedback: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 200,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.drive_file_rename_outline,
+                size: 18, color: theme.colorScheme.primary),
+            title: Text(p.name, style: const TextStyle(fontSize: 13)),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.4,
+        child: ListTile(
+          dense: true,
+          leading: _selectMode
+              ? Checkbox(
+                  value: _selectedIds.contains(p.id),
+                  onChanged: (_) => _toggleSelect(p.id!),
+                )
+              : Icon(Icons.folder_outlined,
+                  size: 18, color: theme.colorScheme.primary),
+          title: Text(p.name, style: const TextStyle(fontSize: 14)),
+          trailing: _selectMode ? null : PopupMenuButton<String>(
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'edit', child: Text('重命名')),
+              if (_groups.isNotEmpty)
+                const PopupMenuItem(value: 'move', child: Text('移动到分组')),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Text('删除', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+            onSelected: (v) {
+              switch (v) {
+                case 'edit':
+                  _renameProject(p);
+                  break;
+                case 'move':
+                  _showMoveDialog(p);
+                  break;
+                case 'delete':
+                  _deleteProject(p);
+                  break;
+              }
+            },
+          ),
+          onTap: _selectMode ? () => _toggleSelect(p.id!) : null,
+        ),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: _selectMode
+            ? Checkbox(
+                value: _selectedIds.contains(p.id),
+                onChanged: (_) => _toggleSelect(p.id!),
+              )
+            : Icon(Icons.folder_outlined,
+                size: 18, color: theme.colorScheme.primary),
+        title: Text(p.name, style: const TextStyle(fontSize: 14)),
+        trailing: _selectMode ? null : PopupMenuButton<String>(
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'edit', child: Text('重命名')),
+            if (_groups.isNotEmpty)
+              const PopupMenuItem(value: 'move', child: Text('移动到分组')),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('删除', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+          onSelected: (v) {
+            switch (v) {
+              case 'edit':
+                _renameProject(p);
+                break;
+              case 'move':
+                _showMoveDialog(p);
+                break;
+              case 'delete':
+                _deleteProject(p);
+                break;
+            }
+          },
+        ),
+        onTap: _selectMode ? () => _toggleSelect(p.id!) : null,
+      ),
+    );
+  }
+
+  Future<void> _showMoveDialog(Project p) async {
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => _PickProjectGroupBatchDialog(groups: _groups),
+    );
+    if (result != null) {
+      await _db.moveProjectToGroup(p.id!, result == -1 ? null : result);
+      _loadData();
+    }
   }
 }
 
-/// 项目分组区块（可收起展开）
+/// 项目分组区块（可收起展开，支持拖拽排序+拖入）
 class _ProjectGroupSection extends StatelessWidget {
   final ProjectGroup group;
   final List<Project> projects;
@@ -460,7 +599,8 @@ class _ProjectGroupSection extends StatelessWidget {
   final VoidCallback onDeleteGroup;
   final Function(Project) onRenameProject;
   final Function(Project) onDeleteProject;
-  final Function(Project) onMoveProject;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final Function(Project) onMoveProjectToGroup;
 
   const _ProjectGroupSection({
     required this.group,
@@ -477,123 +617,216 @@ class _ProjectGroupSection extends StatelessWidget {
     required this.onDeleteGroup,
     required this.onRenameProject,
     required this.onDeleteProject,
-    required this.onMoveProject,
+    required this.onReorder,
+    required this.onMoveProjectToGroup,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: onToggleExpand,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-              child: Row(
-                children: [
-                  Icon(
-                    isExpanded ? Icons.expand_more : Icons.chevron_right,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.folder,
-                      size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 6),
-                  Text(group.name,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  if (!selectMode) ...[
-                    Text('${projects.length}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant)),
-                    IconButton(
-                      icon: const Icon(Icons.add, size: 18),
-                      tooltip: '在此分组新建项目',
-                      onPressed: onAddProject,
-                    ),
-                    PopupMenuButton<String>(
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                            value: 'rename', child: Text('重命名分组')),
-                        const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('删除分组',
-                                style: TextStyle(color: Colors.red))),
-                      ],
-                      onSelected: (v) {
-                        switch (v) {
-                          case 'rename':
-                            onRenameGroup();
-                            break;
-                          case 'delete':
-                            onDeleteGroup();
-                            break;
-                        }
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
+    return DragTarget<Project>(
+      onAcceptWithDetails: (details) => onMoveProjectToGroup(details.data),
+      builder: (context, candidateData, rejectedData) {
+        final isHovering = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: isHovering
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.15)
+                : null,
+            borderRadius: BorderRadius.circular(8),
+            border: isHovering
+                ? Border.all(color: theme.colorScheme.primary, width: 2)
+                : null,
           ),
-          if (isExpanded)
-            if (projects.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Text('（空）',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
-              )
-            else
-              ...projects.map((p) => ListTile(
-                    dense: true,
-                    leading: selectMode
-                        ? Checkbox(
-                            value: selectedIds.contains(p.id),
-                            onChanged: (_) => onToggleSelect(p.id!),
-                          )
-                        : Icon(Icons.folder_outlined,
-                            size: 18, color: theme.colorScheme.primary),
-                    title: Text(p.name, style: const TextStyle(fontSize: 14)),
-                    trailing: selectMode
-                        ? null
-                        : PopupMenuButton<String>(
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: onToggleExpand,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isExpanded ? Icons.expand_more : Icons.chevron_right,
+                          size: 20,
+                          color: isHovering ? theme.colorScheme.primary : theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.folder,
+                            size: 18, color: isHovering ? theme.colorScheme.primary : theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(group.name,
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isHovering ? theme.colorScheme.primary : null)),
+                        const Spacer(),
+                        if (isHovering)
+                          Text('释放移到此处',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.primary))
+                        else if (!selectMode) ...[
+                          Text('${projects.length}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurfaceVariant)),
+                          IconButton(
+                            icon: const Icon(Icons.add, size: 18),
+                            tooltip: '在此分组新建项目',
+                            onPressed: onAddProject,
+                          ),
+                          PopupMenuButton<String>(
                             itemBuilder: (context) => [
                               const PopupMenuItem(
-                                  value: 'edit', child: Text('重命名')),
-                              if (allGroups.isNotEmpty)
-                                const PopupMenuItem(
-                                    value: 'move',
-                                    child: Text('移动到分组')),
+                                  value: 'rename', child: Text('重命名分组')),
                               const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('删除',
-                                    style: TextStyle(color: Colors.red)),
-                              ),
+                                  value: 'delete',
+                                  child: Text('删除分组',
+                                      style: TextStyle(color: Colors.red))),
                             ],
                             onSelected: (v) {
                               switch (v) {
-                                case 'edit':
-                                  onRenameProject(p);
-                                  break;
-                                case 'move':
-                                  onMoveProject(p);
+                                case 'rename':
+                                  onRenameGroup();
                                   break;
                                 case 'delete':
-                                  onDeleteProject(p);
+                                  onDeleteGroup();
                                   break;
                               }
                             },
                           ),
-                    onTap:
-                        selectMode ? () => onToggleSelect(p.id!) : null,
-                  )),
-        ],
-      ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (isExpanded)
+                  if (projects.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Text('（空）',
+                          style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    )
+                  else
+                    ReorderableListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      itemCount: projects.length,
+                      onReorder: onReorder,
+                      proxyDecorator: (child, index, animation) => Material(
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(8),
+                        child: child,
+                      ),
+                      itemBuilder: (context, index) {
+                        final p = projects[index];
+                        return LongPressDraggable<Project>(
+                          key: ValueKey(p.id),
+                          data: p,
+                          delay: const Duration(milliseconds: 350),
+                          feedback: Material(
+                            elevation: 4,
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: 200,
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.drive_file_rename_outline,
+                                    size: 18, color: theme.colorScheme.primary),
+                                title: Text(p.name, style: const TextStyle(fontSize: 13)),
+                              ),
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.4,
+                            child: ListTile(
+                              dense: true,
+                              leading: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.drag_handle, size: 18),
+                                  if (selectMode)
+                                    Checkbox(
+                                      value: selectedIds.contains(p.id),
+                                      onChanged: (_) => onToggleSelect(p.id!),
+                                    )
+                                  else
+                                    const SizedBox(width: 4),
+                                ],
+                              ),
+                              title: Text(p.name, style: const TextStyle(fontSize: 14)),
+                            ),
+                          ),
+                          child: ListTile(
+                            dense: true,
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: const Icon(Icons.drag_handle, size: 18),
+                                ),
+                                if (selectMode)
+                                  Checkbox(
+                                    value: selectedIds.contains(p.id),
+                                    onChanged: (_) => onToggleSelect(p.id!),
+                                  )
+                                else
+                                  const SizedBox(width: 4),
+                              ],
+                            ),
+                            title: Text(p.name, style: const TextStyle(fontSize: 14)),
+                            trailing: selectMode
+                                ? null
+                                : PopupMenuButton<String>(
+                                    itemBuilder: (context) => [
+                                      const PopupMenuItem(
+                                          value: 'edit', child: Text('重命名')),
+                                      if (allGroups.isNotEmpty)
+                                        const PopupMenuItem(
+                                            value: 'move', child: Text('移动到分组')),
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text('删除',
+                                            style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                    onSelected: (v) {
+                                      switch (v) {
+                                        case 'edit':
+                                          onRenameProject(p);
+                                          break;
+                                        case 'move':
+                                          final ctx = context;
+                                          showDialog<int?>(
+                                            context: ctx,
+                                            builder: (ctx) =>
+                                                _PickProjectGroupBatchDialog(
+                                                    groups: allGroups),
+                                          ).then((result) {});
+                                          break;
+                                        case 'delete':
+                                          onDeleteProject(p);
+                                          break;
+                                      }
+                                    },
+                                  ),
+                            onTap: selectMode ? () => onToggleSelect(p.id!) : null,
+                          ),
+                        );
+                      },
+                    ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

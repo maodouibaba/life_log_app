@@ -128,6 +128,36 @@ class EntryDetailPage extends StatelessWidget {
                       ),
                     ],
 
+                    // 对接人
+                    if (entry.contactPerson != null && entry.contactPerson!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Icon(Icons.person_outline,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(entry.contactPerson!,
+                              style: const TextStyle(fontSize: 14)),
+                        ],
+                      ),
+                    ],
+
+                    // 后续待办
+                    if (entry.followUp != null && entry.followUp!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Icon(Icons.checklist_outlined,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(entry.followUp!,
+                                style: const TextStyle(fontSize: 14)),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     // 属性标签
                     if (entry.attributeTags.isNotEmpty) ...[
                       const SizedBox(height: 8),

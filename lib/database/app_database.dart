@@ -132,7 +132,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -376,6 +376,18 @@ class AppDatabase {
         )
       ''');
     }
+
+    // v4 → v5：属性标签和项目增加 sort_order 字段，支持拖拽排序
+    if (oldVersion < 5) {
+      try { await db.execute('ALTER TABLE attribute_tags ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+      try { await db.execute('ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+    }
+
+    // v5 → v6：记录增加 contact_person（对接人）和 follow_up（后续待办）字段
+    if (oldVersion < 6) {
+      try { await db.execute('ALTER TABLE entries ADD COLUMN contact_person TEXT'); } catch (_) {}
+      try { await db.execute('ALTER TABLE entries ADD COLUMN follow_up TEXT'); } catch (_) {}
+    }
   }
 
   // ==================== 设置持久化 ====================
@@ -573,7 +585,7 @@ class AppDatabase {
   Future<List<AttributeTag>> getAllAttributeTags(int spaceId) async {
     final db = await database;
     final maps = await db.query('attribute_tags',
-        where: 'space_id = ?', whereArgs: [spaceId], orderBy: 'id ASC');
+        where: 'space_id = ?', whereArgs: [spaceId], orderBy: 'sort_order ASC, id ASC');
     return maps.map((map) => AttributeTag.fromMap(map)).toList();
   }
 
@@ -603,6 +615,18 @@ class AppDatabase {
     final db = await database;
     await db.update('attribute_tags', {'group_id': groupId},
         where: 'id = ?', whereArgs: [tagId]);
+  }
+
+  Future<void> updateAttributeTagSortOrder(int tagId, int sortOrder) async {
+    final db = await database;
+    await db.update('attribute_tags', {'sort_order': sortOrder},
+        where: 'id = ?', whereArgs: [tagId]);
+  }
+
+  Future<void> updateProjectSortOrder(int projectId, int sortOrder) async {
+    final db = await database;
+    await db.update('projects', {'sort_order': sortOrder},
+        where: 'id = ?', whereArgs: [projectId]);
   }
 
   Future<void> deleteAttributeTag(int tagId) async {
@@ -648,7 +672,7 @@ class AppDatabase {
     final where = spaceId != null ? 'space_id = ?' : null;
     final args = spaceId != null ? [spaceId] : null;
     final maps = await db.query('projects',
-        where: where, whereArgs: args, orderBy: 'id ASC');
+        where: where, whereArgs: args, orderBy: 'sort_order ASC, id ASC');
     return maps.map((map) => Project.fromMap(map)).toList();
   }
 
@@ -702,7 +726,9 @@ class AppDatabase {
       List<int>? attributeTagIds,
       int? projectId,
       int? spaceId,
-      DateTime? createdAt}) async {
+      DateTime? createdAt,
+      String? contactPerson,
+      String? followUp}) async {
     final db = await database;
     final now = createdAt ?? DateTime.now();
     final entry = Entry(
@@ -712,6 +738,8 @@ class AppDatabase {
       updatedAt: now,
       projectId: projectId,
       spaceId: spaceId ?? 1,
+      contactPerson: contactPerson,
+      followUp: followUp,
     );
 
     final id = await db.insert('entries', entry.toMap());
@@ -1082,13 +1110,15 @@ class AppDatabase {
         where: 'id IN ($placeholders)', whereArgs: entryIds);
   }
 
-  /// 更新记录内容、标签、项目、属性标签
+  /// 更新记录内容、标签、项目、属性标签、对接人、后续待办
   Future<void> updateEntryWithTags(int entryId, String content,
       {String? title,
       List<int>? tagIds,
       List<int>? attributeTagIds,
       int? projectId,
-      DateTime? createdAt}) async {
+      DateTime? createdAt,
+      String? contactPerson,
+      String? followUp}) async {
     final db = await database;
 
     final updateData = <String, dynamic>{
@@ -1096,6 +1126,8 @@ class AppDatabase {
       'content': content,
       'updated_at': DateTime.now().toIso8601String(),
       'project_id': projectId,
+      'contact_person': contactPerson,
+      'follow_up': followUp,
     };
     if (createdAt != null) {
       updateData['created_at'] = createdAt.toIso8601String();
@@ -1363,13 +1395,16 @@ class AppDatabase {
   }
 
   /// 从 JSON 合并导入数据（保留本地已有数据，合并互补，冲突以更新者为准）
-  Future<Map<String, int>> mergeFromJson(String jsonStr) async {
+  /// 每条记录逐条容错——单条失败不会导致整体回滚
+  Future<Map<String, dynamic>> mergeFromJson(String jsonStr) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
     final db = await database;
 
     int addedEntries = 0;
     int updatedEntries = 0;
     int addedTags = 0;
+    int skippedErrors = 0;
+    final errorDetails = <String>[];
 
     await db.transaction((txn) async {
       // ======== 合并入口 ========
@@ -1380,7 +1415,12 @@ class AppDatabase {
         final m = item as Map<String, dynamic>;
         final id = m['id'] as int;
         if (!existingSpaceIds.contains(id)) {
-          await txn.insert('spaces', m);
+          try {
+            await txn.insert('spaces', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('spaces #$id: $e');
+          }
         }
       }
 
@@ -1392,8 +1432,13 @@ class AppDatabase {
         final m = item as Map<String, dynamic>;
         final id = m['id'] as int;
         if (!existingTagIds.contains(id)) {
-          await txn.insert('tags', m);
-          addedTags++;
+          try {
+            await txn.insert('tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+            addedTags++;
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('tags #$id: $e');
+          }
         }
       }
 
@@ -1404,7 +1449,12 @@ class AppDatabase {
       for (final item in incomingPG) {
         final m = item as Map<String, dynamic>;
         if (!existingPGIds.contains(m['id'] as int)) {
-          await txn.insert('project_groups', m);
+          try {
+            await txn.insert('project_groups', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('project_groups #${m['id']}: $e');
+          }
         }
       }
 
@@ -1415,7 +1465,12 @@ class AppDatabase {
       for (final item in incomingProjects) {
         final m = item as Map<String, dynamic>;
         if (!existingProjectIds.contains(m['id'] as int)) {
-          await txn.insert('projects', m);
+          try {
+            await txn.insert('projects', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('projects #${m['id']}: $e');
+          }
         }
       }
 
@@ -1426,7 +1481,12 @@ class AppDatabase {
       for (final item in incomingATG) {
         final m = item as Map<String, dynamic>;
         if (!existingATGIds.contains(m['id'] as int)) {
-          await txn.insert('attribute_tag_groups', m);
+          try {
+            await txn.insert('attribute_tag_groups', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('attribute_tag_groups #${m['id']}: $e');
+          }
         }
       }
 
@@ -1437,7 +1497,12 @@ class AppDatabase {
       for (final item in incomingAT) {
         final m = item as Map<String, dynamic>;
         if (!existingATIds.contains(m['id'] as int)) {
-          await txn.insert('attribute_tags', m);
+          try {
+            await txn.insert('attribute_tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('attribute_tags #${m['id']}: $e');
+          }
         }
       }
 
@@ -1452,17 +1517,25 @@ class AppDatabase {
       for (final item in incomingEntries) {
         final m = item as Map<String, dynamic>;
         final id = m['id'] as int;
-        if (existingEntryMap.containsKey(id)) {
-          // 冲突：保留 updated_at 更新的那个
-          final localUpdated = DateTime.parse(existingEntryMap[id]!['updated_at'] as String);
-          final remoteUpdated = DateTime.parse(m['updated_at'] as String);
-          if (remoteUpdated.isAfter(localUpdated)) {
-            await txn.update('entries', m, where: 'id = ?', whereArgs: [id]);
-            updatedEntries++;
+        try {
+          if (existingEntryMap.containsKey(id)) {
+            // 冲突：保留 updated_at 更新的那个
+            final localStr = existingEntryMap[id]!['updated_at'] as String?;
+            final remoteStr = m['updated_at'] as String?;
+            if (localStr == null || remoteStr == null) continue;
+            final localUpdated = DateTime.parse(localStr);
+            final remoteUpdated = DateTime.parse(remoteStr);
+            if (remoteUpdated.isAfter(localUpdated)) {
+              await txn.update('entries', m, where: 'id = ?', whereArgs: [id]);
+              updatedEntries++;
+            }
+          } else {
+            await txn.insert('entries', m, conflictAlgorithm: ConflictAlgorithm.fail);
+            addedEntries++;
           }
-        } else {
-          await txn.insert('entries', m);
-          addedEntries++;
+        } catch (e) {
+          skippedErrors++;
+          errorDetails.add('entries #$id: $e');
         }
       }
 
@@ -1476,7 +1549,12 @@ class AppDatabase {
         final m = item as Map<String, dynamic>;
         final key = '${m['entry_id']}-${m['tag_id']}';
         if (!existingETSet.contains(key)) {
-          await txn.insert('entry_tags', m);
+          try {
+            await txn.insert('entry_tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('entry_tags ${m['entry_id']}-${m['tag_id']}: $e');
+          }
         }
       }
 
@@ -1490,15 +1568,30 @@ class AppDatabase {
         final m = item as Map<String, dynamic>;
         final key = '${m['entry_id']}-${m['attribute_tag_id']}';
         if (!existingEATSet.contains(key)) {
-          await txn.insert('entry_attribute_tags', m);
+          try {
+            await txn.insert('entry_attribute_tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('entry_attribute_tags ${m['entry_id']}-${m['attribute_tag_id']}: $e');
+          }
         }
       }
     });
+
+    // 如有错误，打印日志辅助排查
+    if (errorDetails.isNotEmpty) {
+      debugPrint('=== mergeFromJson 合并异常汇总 ===');
+      for (final err in errorDetails) {
+        debugPrint('  $err');
+      }
+    }
 
     return {
       'added_entries': addedEntries,
       'updated_entries': updatedEntries,
       'added_tags': addedTags,
+      'skipped_errors': skippedErrors,
+      if (errorDetails.isNotEmpty) 'error_details': errorDetails,
     };
   }
 
@@ -1597,6 +1690,8 @@ class AppDatabase {
         'tags': tagPaths,
         'project': entry.projectName,
         'attribute_tags': entry.attributeTags.map((at) => at.name).toList(),
+        'contact_person': entry.contactPerson ?? '',
+        'follow_up': entry.followUp ?? '',
       });
     }
 

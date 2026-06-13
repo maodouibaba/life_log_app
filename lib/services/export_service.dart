@@ -33,6 +33,8 @@ class ExportService {
     }
     header.add('项目');
     header.add('属性标签');
+    header.add('对接人');
+    header.add('后续待办');
     sheet.appendRow(header);
 
     // 数据行：一条记录一行，取最长标签路径填入各层级列
@@ -58,6 +60,8 @@ class ExportService {
         ..addAll(List.filled(maxDepth - deepestParts.length, ''));
 
       final title = row['title'] as String? ?? '';
+      final contactPerson = row['contact_person'] as String? ?? '';
+      final followUp = row['follow_up'] as String? ?? '';
 
       sheet.appendRow([
         dateTimeStr,
@@ -66,6 +70,8 @@ class ExportService {
         ...padded,
         project,
         attributeTags.join('、'),
+        contactPerson,
+        followUp,
       ]);
     }
 

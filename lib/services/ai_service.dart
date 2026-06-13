@@ -233,6 +233,89 @@ class AIService {
     throw Exception('AI 返回格式异常');
   }
 
+  /// 对一组记录进行 AI 总结
+  /// [entries] 记录内容列表，每项包含标题和正文
+  /// [customPrompt] 自定义总结要求，为空则使用默认
+  static Future<String> summarize(List<MapEntry<String, String>> entries,
+      {String? customPrompt}) async {
+    final s = AISettings();
+    if (!s.hasKey) throw Exception('请先在设置中输入 API Key');
+    if (s.resolvedApiUrl.isEmpty) throw Exception('请填写 API 地址');
+
+    if (entries.isEmpty) throw Exception('没有可总结的记录');
+
+    // 组装记录文本
+    final buffer = StringBuffer();
+    for (int i = 0; i < entries.length; i++) {
+      final title = entries[i].key;
+      final content = entries[i].value;
+      buffer.writeln('--- 记录 ${i + 1} ---');
+      if (title.isNotEmpty) buffer.writeln('标题：$title');
+      buffer.writeln(content);
+      buffer.writeln();
+    }
+    final entriesText = buffer.toString();
+    final userPrompt = customPrompt?.isNotEmpty == true
+        ? customPrompt!
+        : '请对以下生活记录进行总结分析，包括：\n'
+            '1. 今天/这段时间的主要活动或事件\n'
+            '2. 关键主题和模式\n'
+            '3. 情绪或状态趋势\n'
+            '4. 有价值的洞察\n\n'
+            '记录内容如下：\n\n$entriesText\n\n'
+            '请用简洁清晰的中文输出总结。';
+
+    final systemPrompt = '你是一位个人生活助理，擅长分析总结生活记录，'
+        '能够从零散的信息中提炼出有价值的见解。'
+        '请用简洁清晰的中文输出，适当使用分段和要点。';
+
+    final isClaude = s.provider.name.contains('Claude');
+
+    try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (isClaude) {
+        headers['x-api-key'] = s.apiKey;
+        headers['anthropic-version'] = '2023-06-01';
+      } else {
+        headers['Authorization'] = 'Bearer ${s.apiKey}';
+      }
+
+      final body = isClaude
+          ? jsonEncode({
+              'model': s.resolvedModel,
+              'max_tokens': 4096,
+              'system': systemPrompt,
+              'messages': [{'role': 'user', 'content': userPrompt}],
+            })
+          : jsonEncode({
+              'model': s.resolvedModel,
+              'max_tokens': 4096,
+              'messages': [
+                {'role': 'system', 'content': systemPrompt},
+                {'role': 'user', 'content': userPrompt},
+              ],
+            });
+
+      final response =
+          await post(Uri.parse(s.resolvedApiUrl), headers: headers, body: body);
+
+      if (response.statusCode == 200) {
+        final bodyUtf8 = utf8.decode(response.bodyBytes);
+        return isClaude ? _parseClaude(bodyUtf8) : _parseOpenAI(bodyUtf8);
+      } else if (response.statusCode == 401) {
+        throw Exception('API Key 无效，请检查后重试');
+      } else if (response.statusCode == 429) {
+        throw Exception('请求太频繁，请稍后再试');
+      } else {
+        final bodyUtf8 = utf8.decode(response.bodyBytes);
+        throw Exception(_extractError(bodyUtf8) ?? '请求失败 (${response.statusCode})');
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('网络请求失败：$e');
+    }
+  }
+
   static String? _extractError(String body) {
     try {
       final data = jsonDecode(body) as Map<String, dynamic>;

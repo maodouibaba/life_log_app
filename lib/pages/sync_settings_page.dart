@@ -28,6 +28,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   List<RemoteFile> _remoteFiles = [];
   bool _loadedOnce = false;
+  // 批量选择
+  bool _selectMode = false;
+  final Set<String> _selectedFileNames = {};
 
   @override
   void initState() {
@@ -248,8 +251,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         final stats = await db.mergeFromJson(jsonContent);
         if (!mounted) return;
         setState(() => _downloading = false);
+        final errors = stats['skipped_errors'] as int? ?? 0;
+        final errHint = errors > 0 ? '（$errors 条异常已跳过）' : '';
         _setStatus('✅ 合并成功！新增 ${stats['added_entries']} 条记录、'
-            '更新 ${stats['updated_entries']} 条、新增 ${stats['added_tags']} 个标签。');
+            '更新 ${stats['updated_entries']} 条、新增 ${stats['added_tags']} 个标签。'
+            '$errHint');
       } else {
         // 覆盖模式（原有逻辑）
         await db.importFromJson(jsonContent);
@@ -298,6 +304,45 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     } catch (e) {
       if (!mounted) return;
       _setStatus('❌ 删除失败：$e', isError: true);
+    }
+  }
+
+  // ==================== 批量删除 ====================
+
+  Future<void> _batchDeleteRemote() async {
+    if (_selectedFileNames.isEmpty) return;
+    final config = _config;
+    if (config == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('确定要删除选中的 ${_selectedFileNames.length} 个云端备份文件吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      int ok = 0;
+      for (final name in _selectedFileNames) {
+        try {
+          await SyncService.deleteBackup(config, name);
+          ok++;
+        } catch (_) {}
+      }
+      _selectedFileNames.clear();
+      _selectMode = false;
+      setState(() {});
+      _setStatus('已批量删除 $ok 个云端备份文件');
+      _refreshFileList();
     }
   }
 
@@ -506,8 +551,59 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             _buildSectionCard(
               theme: theme,
               icon: Icons.folder_outlined,
-              title: '云端备份文件',
+              title: _selectMode ? '云端备份文件（已选 ${_selectedFileNames.length}）' : '云端备份文件',
               children: [
+                // 批量选择操作栏
+                if (_remoteFiles.isNotEmpty)
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _selectMode = !_selectMode;
+                          if (!_selectMode) _selectedFileNames.clear();
+                        }),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _selectMode ? Icons.close : Icons.checklist,
+                              size: 16,
+                              color: theme.colorScheme.primary,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              _selectMode ? '取消' : '选择',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_selectMode && _selectedFileNames.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: _batchDeleteRemote,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.delete_outline,
+                                  size: 16,
+                                  color: theme.colorScheme.error),
+                              const SizedBox(width: 2),
+                              Text('删除所选（${_selectedFileNames.length}）',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.error,
+                                  )),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                const SizedBox(height: 8),
                 if (_loadingFiles)
                   const Center(
                     child: Padding(
@@ -569,33 +665,55 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Widget _buildFileTile(RemoteFile file, ThemeData theme) {
     final sizeStr = _formatSize(file.size);
     final dateStr = _formatDateTime(file.modified);
+    final isSelected = _selectedFileNames.contains(file.name);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
-        leading:
-            Icon(Icons.description, color: theme.colorScheme.primary),
+        leading: _selectMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged: (_) => setState(() {
+                  if (isSelected) {
+                    _selectedFileNames.remove(file.name);
+                  } else {
+                    _selectedFileNames.add(file.name);
+                  }
+                }),
+              )
+            : Icon(Icons.description, color: theme.colorScheme.primary),
         title: Text(file.name, style: const TextStyle(fontSize: 13)),
         subtitle: Text('$sizeStr · $dateStr',
             style: const TextStyle(fontSize: 11)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: _downloading ? null : () => _downloadBackup(file),
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.error,
+        trailing: _selectMode
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: _downloading ? null : () => _downloadBackup(file),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                    child: const Text('恢复'),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete_outline,
+                        size: 18, color: theme.colorScheme.onSurfaceVariant),
+                    tooltip: '删除云端备份',
+                    onPressed: () => _deleteRemoteBackup(file),
+                  ),
+                ],
               ),
-              child: const Text('恢复'),
-            ),
-            IconButton(
-              icon: Icon(Icons.delete_outline,
-                  size: 18, color: theme.colorScheme.onSurfaceVariant),
-              tooltip: '删除云端备份',
-              onPressed: () => _deleteRemoteBackup(file),
-            ),
-          ],
-        ),
+        onTap: _selectMode
+            ? () => setState(() {
+                  if (isSelected) {
+                    _selectedFileNames.remove(file.name);
+                  } else {
+                    _selectedFileNames.add(file.name);
+                  }
+                })
+            : null,
         dense: true,
       ),
     );

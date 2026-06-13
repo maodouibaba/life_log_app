@@ -25,6 +25,10 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   String _scanPath = '';
   int _scanKey = 0; // 用于强制刷新 FutureBuilder
 
+  // 批量选择
+  bool _selectMode = false;
+  final Set<String> _selectedPaths = {};
+
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
@@ -252,6 +256,39 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     _initDefaultPath();
   }
 
+  Future<void> _batchDelete() async {
+    if (_selectedPaths.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('确定要删除选中的 ${_selectedPaths.length} 个备份文件吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      for (final path in _selectedPaths) {
+        try { await File(path).delete(); } catch (_) {}
+      }
+      _selectedPaths.clear();
+      _selectMode = false;
+      setState(() => _scanKey++);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已批量删除')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _pathController.dispose();
@@ -264,7 +301,24 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('数据备份'),
+        title: Text(_selectMode ? '已选 ${_selectedPaths.length}' : '数据备份'),
+        actions: [
+          if (_selectMode) ...[
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+              tooltip: '批量删除',
+              onPressed: _selectedPaths.isNotEmpty ? _batchDelete : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: '取消选择',
+              onPressed: () => setState(() {
+                _selectMode = false;
+                _selectedPaths.clear();
+              }),
+            ),
+          ],
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -467,11 +521,40 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('找到 ${files.length} 个备份文件：',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: theme
-                                        .colorScheme.onSurfaceVariant)),
+                            Row(
+                              children: [
+                                Text('找到 ${files.length} 个备份文件：',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: theme
+                                            .colorScheme.onSurfaceVariant)),
+                                const Spacer(),
+                                GestureDetector(
+                                  onTap: () => setState(() {
+                                    _selectMode = !_selectMode;
+                                    if (!_selectMode) _selectedPaths.clear();
+                                  }),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _selectMode ? Icons.close : Icons.checklist,
+                                        size: 16,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        _selectMode ? '取消' : '选择',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                             const SizedBox(height: 8),
                             ...files.map((f) {
                               final file = f as File;
@@ -482,39 +565,62 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                                   _formatFileSize(file.statSync().size);
                               final modTime = _formatModTime(
                                   file.statSync().modified);
+                              final isSelected = _selectedPaths.contains(file.path);
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 6),
                                 child: ListTile(
-                                  leading: Icon(Icons.description,
-                                      color: theme.colorScheme.primary),
+                                  leading: _selectMode
+                                      ? Checkbox(
+                                          value: isSelected,
+                                          onChanged: (_) => setState(() {
+                                            if (isSelected) {
+                                              _selectedPaths.remove(file.path);
+                                            } else {
+                                              _selectedPaths.add(file.path);
+                                            }
+                                          }),
+                                        )
+                                      : Icon(Icons.description,
+                                          color: theme.colorScheme.primary),
                                   title: Text(name,
                                       style: const TextStyle(fontSize: 14)),
                                   subtitle: Text('$size · $modTime',
                                       style:
                                           const TextStyle(fontSize: 11)),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            _importFromFile(file.path),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              theme.colorScheme.error,
+                                  trailing: _selectMode
+                                      ? null
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  _importFromFile(file.path),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor:
+                                                    theme.colorScheme.error,
+                                              ),
+                                              child: const Text('恢复'),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete_outline,
+                                                  size: 18,
+                                                  color: theme
+                                                      .colorScheme.onSurfaceVariant),
+                                              tooltip: '删除此备份文件',
+                                              onPressed: () =>
+                                                  _deleteBackupFile(file),
+                                            ),
+                                          ],
                                         ),
-                                        child: const Text('恢复'),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(Icons.delete_outline,
-                                            size: 18,
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant),
-                                        tooltip: '删除此备份文件',
-                                        onPressed: () =>
-                                            _deleteBackupFile(file),
-                                      ),
-                                    ],
-                                  ),
+                                  onTap: _selectMode
+                                      ? () => setState(() {
+                                            if (isSelected) {
+                                              _selectedPaths.remove(file.path);
+                                            } else {
+                                              _selectedPaths.add(file.path);
+                                            }
+                                          })
+                                      : null,
                                   dense: true,
                                 ),
                               );

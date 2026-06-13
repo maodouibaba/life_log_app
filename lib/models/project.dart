@@ -7,6 +7,7 @@ class Project {
   final DateTime createdAt;
   final int spaceId;
   final int? groupId; // 所属项目分组，null = 未分组
+  final int sortOrder; // 同级排序
 
   Project({
     this.id,
@@ -14,6 +15,7 @@ class Project {
     DateTime? createdAt,
     this.spaceId = 1,
     this.groupId,
+    this.sortOrder = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   factory Project.fromMap(Map<String, dynamic> map) {
@@ -23,6 +25,7 @@ class Project {
       createdAt: DateTime.parse(map['created_at'] as String),
       spaceId: (map['space_id'] as int?) ?? 1,
       groupId: map['group_id'] as int?,
+      sortOrder: map['sort_order'] as int? ?? 0,
     );
   }
 
@@ -33,6 +36,7 @@ class Project {
       'created_at': createdAt.toIso8601String(),
       'space_id': spaceId,
       'group_id': groupId,
+      'sort_order': sortOrder,
     };
   }
 
@@ -43,6 +47,7 @@ class Project {
     int? spaceId,
     int? groupId,
     bool clearGroupId = false,
+    int? sortOrder,
   }) {
     return Project(
       id: id ?? this.id,

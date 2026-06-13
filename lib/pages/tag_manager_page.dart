@@ -4,6 +4,7 @@ import '../database/app_database.dart';
 
 /// 标签管理页面
 /// 树状展示所有标签，支持新增、编辑、删除、调整层级（移动父节点）、拖动排序
+/// 长按标签体可拖拽到其他标签上改变层级
 class TagManagerPage extends StatefulWidget {
   final int spaceId;
 
@@ -115,7 +116,16 @@ class _TagManagerPageState extends State<TagManagerPage> {
     }
   }
 
-  Future<void> _moveTag(Tag tag) async {
+  /// 移动标签层级。拖拽时直接传入 newParentId，菜单点击时走弹窗
+  Future<void> _moveTag(Tag tag, [int? newParentId]) async {
+    // 拖拽直接传入 newParentId，不弹窗
+    if (newParentId != null) {
+      await _db.moveTag(tag.id!, newParentId);
+      _loadTags();
+      return;
+    }
+
+    // 菜单点击仍用弹窗
     final excludeIds = _getDescendantIds(tag.id!)..add(tag.id!);
     final candidates =
         _allTags.where((t) => !excludeIds.contains(t.id)).toList();
@@ -128,15 +138,15 @@ class _TagManagerPageState extends State<TagManagerPage> {
         currentParentId: tag.parentId,
       ),
     );
-    int? newParentId;
+    int? parentId;
     if (selectedId == -1) {
-      newParentId = null;
+      parentId = null;
     } else if (selectedId != null && selectedId != tag.parentId) {
-      newParentId = selectedId;
+      parentId = selectedId;
     } else {
       return;
     }
-    await _db.moveTag(tag.id!, newParentId);
+    await _db.moveTag(tag.id!, parentId);
     _loadTags();
   }
 
@@ -174,10 +184,12 @@ class _TagManagerPageState extends State<TagManagerPage> {
     }
   }
 
-  /// 拖拽排序：重新编号同级标签
-  Future<void> _reorderChildrenOf(int parentId,
+  /// 拖拽排序：重新编号同级标签（parentId = null 表示根标签）
+  Future<void> _reorderChildrenOf(int? parentId,
       int oldIndex, int newIndex) async {
-    final siblings = _getChildren(parentId);
+    final siblings = parentId != null
+        ? _getChildren(parentId)
+        : _getRootTags();
     if (oldIndex < newIndex) newIndex--;
     final updated = List<Tag>.from(siblings);
     final item = updated.removeAt(oldIndex);
@@ -265,6 +277,7 @@ class _TagManagerPageState extends State<TagManagerPage> {
 }
 
 /// 可拖拽排序的标签列表（会递归显示子标签）
+/// 同级拖拽手柄排序；长按标签体可拖到其他标签上改变层级
 class _ReorderableTagList extends StatefulWidget {
   final List<Tag> tags;
   final int? parentId;
@@ -275,9 +288,9 @@ class _ReorderableTagList extends StatefulWidget {
   final void Function(int tagId) onToggleExpand;
   final void Function(int parentId) onAddChild;
   final Function(Tag) onEdit;
-  final Function(Tag) onMove;
+  final void Function(Tag tag, int? newParentId) onMove;
   final Function(Tag) onDelete;
-  final void Function(int parentId, int oldIndex, int newIndex) onReorder;
+  final void Function(int? parentId, int oldIndex, int newIndex) onReorder;
   final VoidCallback onChanged;
 
   const _ReorderableTagList({
@@ -304,6 +317,18 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
   bool _isExpanded(Tag tag) => widget.expandedIds.contains(tag.id);
   bool _hasChildren(Tag tag) => widget.getChildren(tag.id!).isNotEmpty;
 
+  /// 判断 source 是否是 target 的后代（防止循环引用）
+  bool _isDescendant(int sourceId, int targetId) {
+    int? current = targetId;
+    while (current != null) {
+      if (current == sourceId) return true;
+      final tags = widget.allTags.where((t) => t.id == current).toList();
+      if (tags.isEmpty) break;
+      current = tags.first.parentId;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ReorderableListView.builder(
@@ -312,7 +337,7 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
       buildDefaultDragHandles: false,
       itemCount: widget.tags.length,
       onReorder: (oldIndex, newIndex) =>
-          widget.onReorder(widget.parentId ?? 0, oldIndex, newIndex),
+          widget.onReorder(widget.parentId, oldIndex, newIndex),
       proxyDecorator: (child, index, animation) => Material(
         elevation: 2,
         borderRadius: BorderRadius.circular(8),
@@ -324,80 +349,165 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
         final isExpanded = _isExpanded(tag);
         final children = widget.getChildren(tag.id!);
 
+        /// 标签体的常规展示
+        Widget buildTagTile() {
+          return Padding(
+            padding: EdgeInsets.only(left: widget.level * 36.0),
+            child: Card(
+              margin: const EdgeInsets.symmetric(vertical: 1),
+              child: ListTile(
+                dense: true,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: const Icon(Icons.drag_handle, size: 20),
+                    ),
+                    if (hasChildren)
+                      IconButton(
+                        icon: Icon(
+                          isExpanded
+                              ? Icons.expand_more
+                              : Icons.chevron_right,
+                          size: 18,
+                        ),
+                        onPressed: () =>
+                            widget.onToggleExpand(tag.id!),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                            minWidth: 24, minHeight: 24),
+                      )
+                    else
+                      const SizedBox(width: 24),
+                  ],
+                ),
+                title: Text(tag.name,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight:
+                          hasChildren ? FontWeight.w600 : FontWeight.normal,
+                    )),
+                trailing: PopupMenuButton<String>(
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                        value: 'add', child: Text('添加子标签')),
+                    const PopupMenuItem(
+                        value: 'edit', child: Text('重命名')),
+                    const PopupMenuItem(
+                        value: 'move', child: Text('移动层级（弹窗）')),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('删除',
+                          style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                  onSelected: (v) {
+                    switch (v) {
+                      case 'add':
+                        widget.onAddChild(tag.id!);
+                        break;
+                      case 'edit':
+                        widget.onEdit(tag);
+                        break;
+                      case 'move':
+                        widget.onMove(tag, null);
+                        break;
+                      case 'delete':
+                        widget.onDelete(tag);
+                        break;
+                    }
+                  },
+                ),
+              ),
+            ),
+          );
+        }
+
         return Column(
           key: ValueKey(tag.id),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: EdgeInsets.only(left: widget.level * 36.0),
-              child: Card(
-                margin: const EdgeInsets.symmetric(vertical: 1),
-                child: ListTile(
-                  dense: true,
-                  leading: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: const Icon(Icons.drag_handle, size: 20),
+            // DragTarget：长按拖拽标签到此标签上，变为此标签的子标签
+            DragTarget<Tag>(
+              onWillAcceptWithDetails: (details) =>
+                  details.data.id != tag.id &&
+                  !_isDescendant(details.data.id!, tag.id!),
+              onAcceptWithDetails: (details) =>
+                  widget.onMove(details.data, tag.id),
+              builder: (context, candidateData, rejectedData) {
+                final isHovering = candidateData.isNotEmpty;
+                if (isHovering) {
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: EdgeInsets.only(left: widget.level * 36.0),
+                    margin: const EdgeInsets.symmetric(vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer
+                          .withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
                       ),
-                      if (hasChildren)
-                        IconButton(
-                          icon: Icon(
-                            isExpanded
-                                ? Icons.expand_more
-                                : Icons.chevron_right,
+                    ),
+                    child: ListTile(
+                      dense: true,
+                      leading: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.drag_handle, size: 20),
+                          if (hasChildren)
+                            IconButton(
+                              icon: Icon(
+                                isExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                              ),
+                              onPressed: () =>
+                                  widget.onToggleExpand(tag.id!),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 24, minHeight: 24),
+                            )
+                          else
+                            const SizedBox(width: 24),
+                        ],
+                      ),
+                      title: Text(tag.name,
+                          style: const TextStyle(fontSize: 14)),
+                      trailing: Icon(Icons.arrow_downward,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                  );
+                }
+                return LongPressDraggable<Tag>(
+                  data: tag,
+                  delay: const Duration(milliseconds: 350),
+                  feedback: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 200,
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(Icons.drive_file_rename_outline,
                             size: 18,
-                          ),
-                          onPressed: () =>
-                              widget.onToggleExpand(tag.id!),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                              minWidth: 24, minHeight: 24),
-                        )
-                      else
-                        const SizedBox(width: 24),
-                    ],
-                  ),
-                  title: Text(tag.name,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight:
-                            hasChildren ? FontWeight.w600 : FontWeight.normal,
-                      )),
-                  trailing: PopupMenuButton<String>(
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                          value: 'add', child: Text('添加子标签')),
-                      const PopupMenuItem(
-                          value: 'edit', child: Text('重命名')),
-                      const PopupMenuItem(
-                          value: 'move', child: Text('移动层级')),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('删除',
-                            style: TextStyle(color: Colors.red)),
+                            color: Theme.of(context).colorScheme.primary),
+                        title: Text(tag.name,
+                            style: const TextStyle(fontSize: 13)),
                       ),
-                    ],
-                    onSelected: (v) {
-                      switch (v) {
-                        case 'add':
-                          widget.onAddChild(tag.id!);
-                          break;
-                        case 'edit':
-                          widget.onEdit(tag);
-                          break;
-                        case 'move':
-                          widget.onMove(tag);
-                          break;
-                        case 'delete':
-                          widget.onDelete(tag);
-                          break;
-                      }
-                    },
+                    ),
                   ),
-                ),
-              ),
+                  childWhenDragging: Opacity(
+                    opacity: 0.4,
+                    child: buildTagTile(),
+                  ),
+                  child: buildTagTile(),
+                );
+              },
             ),
             // 展开显示子标签（递归）
             if (isExpanded && hasChildren)
