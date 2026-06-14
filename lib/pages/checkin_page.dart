@@ -224,20 +224,25 @@ class _CheckinPageState extends State<CheckinPage> {
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildStatsBar(theme),
-                    const SizedBox(height: 20),
-                    _buildCheckinGrid(theme),
-                    const SizedBox(height: 24),
-                    _buildWeekChart(theme),
-                    const SizedBox(height: 24),
-                    _buildHeatmap(theme),
-                    const SizedBox(height: 24),
-                    _buildCompletionList(theme),
-                    const SizedBox(height: 32),
-                  ],
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildStatsBar(theme),
+                        const SizedBox(height: 20),
+                        _buildCheckinGrid(theme),
+                        const SizedBox(height: 24),
+                        _buildWeekChart(theme),
+                        const SizedBox(height: 24),
+                        _buildHeatmap(theme),
+                        const SizedBox(height: 24),
+                        _buildCompletionList(theme),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -318,17 +323,22 @@ class _CheckinPageState extends State<CheckinPage> {
             ],
           ),
         ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.1,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.1,
+              ),
+              itemCount: _items.length,
+              itemBuilder: (ctx, i) => _buildCheckinButton(theme, _items[i]),
+            ),
           ),
-          itemCount: _items.length,
-          itemBuilder: (ctx, i) => _buildCheckinButton(theme, _items[i]),
         ),
       ],
     );

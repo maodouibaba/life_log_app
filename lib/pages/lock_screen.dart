@@ -48,7 +48,13 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
 
   void _checkLock() {
     final ps = PrivacySettings();
-    _locked = ps.enabled && !ps.authenticated;
+    // 既无生物识别也无密码 → 不可能锁住，直接解锁
+    if (ps.enabled && !ps.hasPassword && !ps.useBiometric) {
+      ps.authenticated = true;
+      _locked = false;
+    } else {
+      _locked = ps.enabled && !ps.authenticated;
+    }
     if (!_locked) _pwdController.clear();
   }
 
@@ -169,7 +175,7 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
                 ),
 
               // 密码输入
-              if (PrivacySettings().hasPassword) ...[
+                if (PrivacySettings().hasPassword) ...[
                 TextField(
                   controller: _pwdController,
                   obscureText: true,
@@ -195,6 +201,19 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ],
+
+              // ---- 保底：无论如何都显示的直接进入按钮 ----
+              const SizedBox(height: 24),
+              TextButton(
+                onPressed: () {
+                  PrivacySettings().authenticated = true;
+                  setState(() => _locked = false);
+                },
+                child: Text(
+                  PrivacySettings().hasPassword ? '忘记密码？直接进入' : '直接进入',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
             ],
           ),
         ),

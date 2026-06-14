@@ -433,7 +433,23 @@ class _AppEntryState extends State<_AppEntry> {
   Future<void> _init() async {
     try {
       final spaces = await _db.getAllSpaces();
-      if (spaces.isNotEmpty && mounted) {
+
+      // 恢复上次使用的入口（锁屏隐藏重建后保持一致性）
+      int? savedId;
+      final saved = await _db.getSetting('last_space_id');
+      if (saved != null) {
+        final parsed = int.tryParse(saved);
+        if (parsed != null && spaces.any((s) => s.id == parsed)) {
+          savedId = parsed;
+        }
+      }
+
+      if (savedId != null && mounted) {
+        setState(() {
+          _spaceId = savedId;
+          _loading = false;
+        });
+      } else if (spaces.isNotEmpty && mounted) {
         setState(() {
           _spaceId = spaces.first.id;
           _loading = false;
@@ -448,6 +464,7 @@ class _AppEntryState extends State<_AppEntry> {
   }
 
   void _onSpaceSelected(int spaceId) {
+    _db.setSetting('last_space_id', spaceId.toString());
     setState(() => _spaceId = spaceId);
   }
 

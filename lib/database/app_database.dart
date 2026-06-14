@@ -1829,6 +1829,10 @@ class AppDatabase {
       // 查询打卡记录（无 space_id 关联，全部导出）
       final checkinRecordMaps = await safeQuery('checkin_records');
 
+      // 查询模板关联表
+      final templateTagMaps = await safeQuery('template_tags');
+      final templateAttributeTagMaps = await safeQuery('template_attribute_tags');
+
       // 序列化标签（逐条容错）
       final tagMaps = tags.map((t) {
         try {
@@ -1865,6 +1869,8 @@ class AppDatabase {
         'attribute_tag_groups': attributeTagGroupMaps,
         'project_groups': projectGroupMaps,
         'templates': templateMaps,
+        'template_tags': templateTagMaps,
+        'template_attribute_tags': templateAttributeTagMaps,
         'checkin_items': checkinItemMaps,
         'checkin_records': checkinRecordMaps,
         if (errors.isNotEmpty) '_export_errors': errors,
@@ -2105,6 +2111,44 @@ class AppDatabase {
         }
       }
 
+      // ======== 合并模板-树状标签关联 ========
+      final incomingTT = data['template_tags'] as List<dynamic>? ?? [];
+      final existingTT = await txn.query('template_tags');
+      final existingTTSet = existingTT
+          .map((m) => '${m['template_id']}-${m['tag_id']}')
+          .toSet();
+      for (final item in incomingTT) {
+        final m = item as Map<String, dynamic>;
+        final key = '${m['template_id']}-${m['tag_id']}';
+        if (!existingTTSet.contains(key)) {
+          try {
+            await txn.insert('template_tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('template_tags ${m['template_id']}-${m['tag_id']}: $e');
+          }
+        }
+      }
+
+      // ======== 合并模板-属性标签关联 ========
+      final incomingTAT = data['template_attribute_tags'] as List<dynamic>? ?? [];
+      final existingTAT = await txn.query('template_attribute_tags');
+      final existingTATSet = existingTAT
+          .map((m) => '${m['template_id']}-${m['attribute_tag_id']}')
+          .toSet();
+      for (final item in incomingTAT) {
+        final m = item as Map<String, dynamic>;
+        final key = '${m['template_id']}-${m['attribute_tag_id']}';
+        if (!existingTATSet.contains(key)) {
+          try {
+            await txn.insert('template_attribute_tags', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('template_attribute_tags ${m['template_id']}-${m['attribute_tag_id']}: $e');
+          }
+        }
+      }
+
       // ======== 合并打卡事项 ========
       final incomingCI = data['checkin_items'] as List<dynamic>? ?? [];
       final existingCI = await txn.query('checkin_items');
@@ -2167,6 +2211,8 @@ class AppDatabase {
       // 清空所有表
       await txn.delete('checkin_records');
       await txn.delete('checkin_items');
+      await txn.delete('template_attribute_tags');
+      await txn.delete('template_tags');
       await txn.delete('templates');
       await txn.delete('entry_attribute_tags');
       await txn.delete('entry_tags');
@@ -2236,6 +2282,18 @@ class AppDatabase {
       final templateList = data['templates'] as List<dynamic>? ?? [];
       for (final item in templateList) {
         await txn.insert('templates', item as Map<String, dynamic>);
+      }
+
+      // 导入模板-树状标签关联
+      final ttList = data['template_tags'] as List<dynamic>? ?? [];
+      for (final item in ttList) {
+        await txn.insert('template_tags', item as Map<String, dynamic>);
+      }
+
+      // 导入模板-属性标签关联
+      final tatList = data['template_attribute_tags'] as List<dynamic>? ?? [];
+      for (final item in tatList) {
+        await txn.insert('template_attribute_tags', item as Map<String, dynamic>);
       }
 
       // 导入打卡事项
