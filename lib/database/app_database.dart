@@ -1816,6 +1816,19 @@ class AppDatabase {
           where: spaceId != null ? 'space_id = ?' : null,
           whereArgs: spaceId != null ? [spaceId] : null);
 
+      // 查询模板（每个空间独立）
+      final templateMaps = await safeQuery('templates',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
+
+      // 查询打卡事项（每个空间独立）
+      final checkinItemMaps = await safeQuery('checkin_items',
+          where: spaceId != null ? 'space_id = ?' : null,
+          whereArgs: spaceId != null ? [spaceId] : null);
+
+      // 查询打卡记录（无 space_id 关联，全部导出）
+      final checkinRecordMaps = await safeQuery('checkin_records');
+
       // 序列化标签（逐条容错）
       final tagMaps = tags.map((t) {
         try {
@@ -1851,6 +1864,9 @@ class AppDatabase {
         'entry_attribute_tags': entryAttributeTagMaps,
         'attribute_tag_groups': attributeTagGroupMaps,
         'project_groups': projectGroupMaps,
+        'templates': templateMaps,
+        'checkin_items': checkinItemMaps,
+        'checkin_records': checkinRecordMaps,
         if (errors.isNotEmpty) '_export_errors': errors,
       };
 
@@ -2072,6 +2088,57 @@ class AppDatabase {
           }
         }
       }
+
+      // ======== 合并模板 ========
+      final incomingTemplates = data['templates'] as List<dynamic>? ?? [];
+      final existingTemplates = await txn.query('templates');
+      final existingTemplateIds = existingTemplates.map((m) => m['id'] as int).toSet();
+      for (final item in incomingTemplates) {
+        final m = item as Map<String, dynamic>;
+        if (!existingTemplateIds.contains(m['id'] as int)) {
+          try {
+            await txn.insert('templates', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('templates #${m['id']}: $e');
+          }
+        }
+      }
+
+      // ======== 合并打卡事项 ========
+      final incomingCI = data['checkin_items'] as List<dynamic>? ?? [];
+      final existingCI = await txn.query('checkin_items');
+      final existingCIIds = existingCI.map((m) => m['id'] as int).toSet();
+      for (final item in incomingCI) {
+        final m = item as Map<String, dynamic>;
+        if (!existingCIIds.contains(m['id'] as int)) {
+          try {
+            await txn.insert('checkin_items', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('checkin_items #${m['id']}: $e');
+          }
+        }
+      }
+
+      // ======== 合并打卡记录 ========
+      final incomingCR = data['checkin_records'] as List<dynamic>? ?? [];
+      final existingCR = await txn.query('checkin_records');
+      final existingCRSet = existingCR
+          .map((m) => '${m['item_id']}-${m['entry_id']}-${m['checkin_date']}')
+          .toSet();
+      for (final item in incomingCR) {
+        final m = item as Map<String, dynamic>;
+        final key = '${m['item_id']}-${m['entry_id']}-${m['checkin_date']}';
+        if (!existingCRSet.contains(key)) {
+          try {
+            await txn.insert('checkin_records', m, conflictAlgorithm: ConflictAlgorithm.ignore);
+          } catch (e) {
+            skippedErrors++;
+            errorDetails.add('checkin_records ${m['item_id']}-${m['entry_id']}: $e');
+          }
+        }
+      }
     });
 
     // 如有错误，打印日志辅助排查
@@ -2098,6 +2165,9 @@ class AppDatabase {
 
     await db.transaction((txn) async {
       // 清空所有表
+      await txn.delete('checkin_records');
+      await txn.delete('checkin_items');
+      await txn.delete('templates');
       await txn.delete('entry_attribute_tags');
       await txn.delete('entry_tags');
       await txn.delete('entries');
@@ -2160,6 +2230,24 @@ class AppDatabase {
       final eatList = data['entry_attribute_tags'] as List<dynamic>? ?? [];
       for (final item in eatList) {
         await txn.insert('entry_attribute_tags', item as Map<String, dynamic>);
+      }
+
+      // 导入模板
+      final templateList = data['templates'] as List<dynamic>? ?? [];
+      for (final item in templateList) {
+        await txn.insert('templates', item as Map<String, dynamic>);
+      }
+
+      // 导入打卡事项
+      final ciList = data['checkin_items'] as List<dynamic>? ?? [];
+      for (final item in ciList) {
+        await txn.insert('checkin_items', item as Map<String, dynamic>);
+      }
+
+      // 导入打卡记录
+      final crList = data['checkin_records'] as List<dynamic>? ?? [];
+      for (final item in crList) {
+        await txn.insert('checkin_records', item as Map<String, dynamic>);
       }
     });
   }
