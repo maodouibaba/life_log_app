@@ -40,6 +40,8 @@ class _ListViewPageState extends State<ListViewPage> {
   final Set<int> _filterTagIds = {};
   final Set<int> _filterProjectIds = {};
   final Set<int> _filterAttributeTagIds = {};
+  String _filterContactPerson = '';
+  bool _filterHasFollowUp = false;
 
   // 关键词搜索
   final _searchController = TextEditingController();
@@ -94,6 +96,9 @@ class _ListViewPageState extends State<ListViewPage> {
         startDate: _startDate,
         endDate: _endDate,
         keyword: _searchKeyword.isNotEmpty ? _searchKeyword : null,
+        contactPerson:
+            _filterContactPerson.isNotEmpty ? _filterContactPerson : null,
+        hasFollowUp: _filterHasFollowUp ? true : null,
       ).timeout(const Duration(seconds: 10), onTimeout: () => []);
 
       if (!mounted) return;
@@ -268,6 +273,109 @@ class _ListViewPageState extends State<ListViewPage> {
     }
   }
 
+  Future<void> _pickContactPerson() async {
+    // 获取所有已有对接人
+    final allPersons = await _db.getAllContactPersons(spaceId: _spaceId);
+    if (!mounted) return;
+
+    final searchController = TextEditingController(text: _filterContactPerson);
+    List<String> filtered = allPersons.where((p) =>
+        p.toLowerCase().contains(_filterContactPerson.toLowerCase())).toList();
+    String? selected;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('按对接人筛选'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: '输入关键词搜索',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  searchController.clear();
+                                  setDialogState(() {
+                                    filtered = allPersons.toList();
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          filtered = v.isEmpty
+                              ? allPersons.toList()
+                              : allPersons
+                                  .where((p) =>
+                                      p.toLowerCase().contains(v.toLowerCase()))
+                                  .toList();
+                        });
+                      },
+                    ),
+                    if (filtered.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: (filtered.length > 6 ? 6 : filtered.length) * 48.0,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (ctx, i) => ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.person_outline, size: 18),
+                            title: Text(filtered[i]),
+                            selected: filtered[i] == searchController.text,
+                            onTap: () {
+                              searchController.text = filtered[i];
+                              selected = filtered[i];
+                              Navigator.pop(ctx, filtered[i]);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (filtered.isEmpty && searchController.text.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text('无匹配的对接人',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消')),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, searchController.text.trim()),
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    searchController.dispose();
+    if (result != null) {
+      setState(() => _filterContactPerson = result);
+      _loadData();
+    }
+  }
+
   void _clearFilter() {
     setState(() {
       _startDate = null;
@@ -275,6 +383,8 @@ class _ListViewPageState extends State<ListViewPage> {
       _filterTagIds.clear();
       _filterProjectIds.clear();
       _filterAttributeTagIds.clear();
+      _filterContactPerson = '';
+      _filterHasFollowUp = false;
       _searchKeyword = '';
       _searchController.clear();
     });
@@ -291,6 +401,8 @@ class _ListViewPageState extends State<ListViewPage> {
       _filterProjectIds.isNotEmpty ||
       _filterAttributeTagIds.isNotEmpty ||
       (_startDate != null && _endDate != null) ||
+      _filterContactPerson.isNotEmpty ||
+      _filterHasFollowUp ||
       _searchKeyword.isNotEmpty;
 
   /// 获取所有活跃筛选条件的标签列表
@@ -343,6 +455,18 @@ class _ListViewPageState extends State<ListViewPage> {
           .join(', ');
       addChip(Icons.folder_outlined, '项目：$names', () {
         setState(() => _filterProjectIds.clear());
+        _loadData();
+      });
+    }
+    if (_filterContactPerson.isNotEmpty) {
+      addChip(Icons.person_outline, '对接人：$_filterContactPerson', () {
+        setState(() => _filterContactPerson = '');
+        _loadData();
+      });
+    }
+    if (_filterHasFollowUp) {
+      addChip(Icons.checklist_outlined, '有后续待办', () {
+        setState(() => _filterHasFollowUp = false);
         _loadData();
       });
     }
@@ -756,6 +880,26 @@ class _ListViewPageState extends State<ListViewPage> {
                           active: _filterProjectIds.isNotEmpty,
                           onTap: _selectMode ? null : _pickProject,
                         ),
+                        const SizedBox(width: 6),
+                        _FilterChip(
+                          icon: Icons.person_outline,
+                          label: '对接人',
+                          active: _filterContactPerson.isNotEmpty,
+                          onTap: _selectMode ? null : _pickContactPerson,
+                        ),
+                        const SizedBox(width: 6),
+                        _FilterChip(
+                          icon: Icons.checklist_outlined,
+                          label: '有后续待办',
+                          active: _filterHasFollowUp,
+                          onTap: _selectMode
+                              ? null
+                              : () {
+                                  setState(() =>
+                                      _filterHasFollowUp = !_filterHasFollowUp);
+                                  _loadData();
+                                },
+                        ),
                       ],
                     ),
                   ),
@@ -970,22 +1114,24 @@ class _GroupByButton extends StatelessWidget {
             ),
           ),
           itemBuilder: (context) => [
-            _buildItem(value: 'date', label: '按日期', icon: Icons.calendar_month),
-            _buildItem(value: 'project', label: '按项目', icon: Icons.folder_outlined),
-            _buildItem(value: 'tag', label: '按树状标签', icon: Icons.label_outline),
-            _buildItem(value: 'attribute_tag', label: '按属性标签', icon: Icons.turned_in_not_outlined),
-            _buildItem(value: 'none', label: '不分组', icon: Icons.clear_all),
+            _buildItem(context, value: 'date', label: '按日期', icon: Icons.calendar_month),
+            _buildItem(context, value: 'project', label: '按项目', icon: Icons.folder_outlined),
+            _buildItem(context, value: 'tag', label: '按树状标签', icon: Icons.label_outline),
+            _buildItem(context, value: 'attribute_tag', label: '按属性标签', icon: Icons.turned_in_not_outlined),
+            _buildItem(context, value: 'none', label: '不分组', icon: Icons.clear_all),
           ],
         ),
       ],
     );
   }
 
-  PopupMenuItem<String> _buildItem({
+  PopupMenuItem<String> _buildItem(
+    BuildContext context, {
     required String value,
     required String label,
     required IconData icon,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return PopupMenuItem<String>(
       value: value,
       child: Row(
@@ -993,7 +1139,7 @@ class _GroupByButton extends StatelessWidget {
           Icon(icon, size: 18,
               color: currentGroupBy == value
                   ? null
-                  : Colors.grey),
+                  : cs.onSurfaceVariant),
           const SizedBox(width: 8),
           Text(
             label,
@@ -1003,7 +1149,7 @@ class _GroupByButton extends StatelessWidget {
           ),
           if (currentGroupBy == value) ...[
             const Spacer(),
-            const Icon(Icons.check, size: 16, color: Colors.green),
+            Icon(Icons.check, size: 16, color: cs.primary),
           ],
         ],
       ),
@@ -1419,9 +1565,10 @@ class _MultiAttributeTagFilterDialogState extends State<_MultiAttributeTagFilter
     // 搜索模式：扁平列表
     Widget buildSearchResults() {
       if (filtered.isEmpty) {
-        return const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('没有匹配的属性标签', style: TextStyle(color: Colors.grey)),
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('没有匹配的属性标签',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         );
       }
       return ListView(
@@ -1466,7 +1613,8 @@ class _MultiAttributeTagFilterDialogState extends State<_MultiAttributeTagFilter
               child: isSearching
                   ? buildSearchResults()
                   : (widget.tags.isEmpty
-                      ? const Center(child: Text('暂无属性标签', style: TextStyle(color: Colors.grey)))
+                      ? Center(child: Text('暂无属性标签',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                       : ListView(
                           children: [
                             ...widget.groups.map((g) {
@@ -1615,9 +1763,10 @@ class _MultiProjectFilterDialogState extends State<_MultiProjectFilterDialog> {
 
     Widget buildSearchResults() {
       if (filtered.isEmpty) {
-        return const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('没有匹配的项目', style: TextStyle(color: Colors.grey)),
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('没有匹配的项目',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         );
       }
       return ListView(
@@ -1661,7 +1810,8 @@ class _MultiProjectFilterDialogState extends State<_MultiProjectFilterDialog> {
               child: isSearching
                   ? buildSearchResults()
                   : (widget.projects.isEmpty
-                      ? const Center(child: Text('暂无项目', style: TextStyle(color: Colors.grey)))
+                      ? Center(child: Text('暂无项目',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                       : ListView(
                           children: [
                             ...widget.groups.map((g) {

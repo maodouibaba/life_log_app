@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/entry.dart';
+import '../models/entry_template.dart';
 import '../database/app_database.dart';
 import '../utils/text_formatter.dart';
 import 'entry_editor_page.dart';
@@ -18,6 +19,11 @@ class EntryDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('记录详情'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_add_outlined),
+            tooltip: '存为模板',
+            onPressed: () => _saveAsTemplate(context, entry),
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: '编辑',
@@ -128,36 +134,6 @@ class EntryDetailPage extends StatelessWidget {
                       ),
                     ],
 
-                    // 对接人
-                    if (entry.contactPerson != null && entry.contactPerson!.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Icon(Icons.person_outline,
-                              size: 16, color: theme.colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Text(entry.contactPerson!,
-                              style: const TextStyle(fontSize: 14)),
-                        ],
-                      ),
-                    ],
-
-                    // 后续待办
-                    if (entry.followUp != null && entry.followUp!.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Icon(Icons.checklist_outlined,
-                              size: 16, color: theme.colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(entry.followUp!,
-                                style: const TextStyle(fontSize: 14)),
-                          ),
-                        ],
-                      ),
-                    ],
-
                     // 属性标签
                     if (entry.attributeTags.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -190,7 +166,43 @@ class EntryDetailPage extends StatelessWidget {
               ),
             ),
 
-            // ---- 卡片 2：事项简介 ----
+            // ---- 卡片 2：对接人 ----
+            if (entry.contactPerson != null && entry.contactPerson!.isNotEmpty)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.person_outline,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '对接人',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        entry.contactPerson!,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // ---- 卡片 3：事项简介 ----
             if (entry.title != null && entry.title!.isNotEmpty)
               Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -198,18 +210,30 @@ class EntryDetailPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.short_text,
-                          size: 18, color: theme.colorScheme.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          entry.title!,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                      Row(
+                        children: [
+                          Icon(Icons.short_text,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '事项简介',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        entry.title!,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -217,7 +241,7 @@ class EntryDetailPage extends StatelessWidget {
                 ),
               ),
 
-            // ---- 卡片 3：详细情况 ----
+            // ---- 卡片 4：详细情况 ----
             Card(
               margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(
@@ -251,6 +275,42 @@ class EntryDetailPage extends StatelessWidget {
                 ),
               ),
             ),
+
+            // ---- 卡片 5：后续待办 ----
+            if (entry.followUp != null && entry.followUp!.isNotEmpty)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.checklist_outlined,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '后续待办',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        entry.followUp!,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -261,5 +321,72 @@ class EntryDetailPage extends StatelessWidget {
     final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
     return '${dt.year}年${dt.month}月${dt.day}日 周${weekdays[dt.weekday - 1]} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+/// 将记录另存为模板
+Future<void> _saveAsTemplate(BuildContext context, Entry entry) async {
+  final nameController = TextEditingController();
+  final name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('另存为模板'),
+      content: TextField(
+        controller: nameController,
+        autofocus: true,
+        decoration: const InputDecoration(
+          hintText: '输入模板名称',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
+          child: const Text('保存'),
+        ),
+      ],
+    ),
+  );
+  nameController.dispose();
+  if (name == null || name.isEmpty) return;
+
+  try {
+    final db = AppDatabase();
+    // 重新获取完整数据（含标签）
+    final fresh = await db.getEntry(entry.id!);
+    if (fresh == null) return;
+
+    // 获取树状标签 ID
+    final tagIds = fresh.tags.where((t) => t.id != null).map((t) => t.id!).toList();
+    final attributeTagIds =
+        fresh.attributeTags.where((t) => t.id != null).map((t) => t.id!).toList();
+
+    final template = EntryTemplate(
+      name: name,
+      title: fresh.title,
+      content: fresh.content,
+      tagIds: tagIds,
+      attributeTagIds: attributeTagIds,
+      projectId: fresh.projectId,
+      projectName: fresh.projectName,
+      contactPerson: fresh.contactPerson,
+      followUp: fresh.followUp,
+    );
+    await db.createTemplate(template);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存为模板')),
+      );
+    }
+  } catch (e) {
+    debugPrint('保存模板失败：$e');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存模板失败：$e')),
+      );
+    }
   }
 }

@@ -12,6 +12,9 @@ import '../models/project_group.dart';
 import '../models/attribute_tag.dart';
 import '../models/attribute_tag_group.dart';
 import '../models/space.dart';
+import '../models/entry_template.dart';
+import '../models/checkin_item.dart';
+import '../models/checkin_record.dart';
 import 'web_database.dart';
 
 /// 本地数据库管理类 v3
@@ -83,7 +86,9 @@ class AppDatabase {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         project_id INTEGER,
-        space_id INTEGER NOT NULL DEFAULT 1
+        space_id INTEGER NOT NULL DEFAULT 1,
+        contact_person TEXT,
+        follow_up TEXT
       )
     ''');
     await db.execute('''
@@ -117,6 +122,55 @@ class AppDatabase {
         PRIMARY KEY (entry_id, attribute_tag_id)
       )
     ''');
+    await db.execute('''
+      CREATE TABLE templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        title TEXT,
+        content TEXT NOT NULL DEFAULT '',
+        project_id INTEGER,
+        contact_person TEXT,
+        follow_up TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE template_tags (
+        template_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (template_id, tag_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE template_attribute_tags (
+        template_id INTEGER NOT NULL,
+        attribute_tag_id INTEGER NOT NULL,
+        PRIMARY KEY (template_id, attribute_tag_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE checkin_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        space_id INTEGER NOT NULL DEFAULT 1,
+        tag_id INTEGER,
+        attribute_tag_id INTEGER,
+        project_id INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE checkin_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        entry_id INTEGER NOT NULL,
+        checkin_date TEXT NOT NULL,
+        checkin_time TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
     // 创建默认入口
     await db.insert('spaces', {
       'name': '默认',
@@ -132,7 +186,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -185,7 +239,7 @@ class AppDatabase {
       )
     ''');
 
-    // 记录表（含 title、space_id）
+    // 记录表（含 title、space_id、contact_person、follow_up）
     await db.execute('''
       CREATE TABLE entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -195,6 +249,8 @@ class AppDatabase {
         updated_at TEXT NOT NULL,
         project_id INTEGER,
         space_id INTEGER NOT NULL DEFAULT 1,
+        contact_person TEXT,
+        follow_up TEXT,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
       )
     ''');
@@ -263,6 +319,67 @@ class AppDatabase {
         value TEXT NOT NULL
       )
     ''');
+
+    // 模板表
+    await db.execute('''
+      CREATE TABLE templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        title TEXT,
+        content TEXT NOT NULL DEFAULT '',
+        project_id INTEGER,
+        contact_person TEXT,
+        follow_up TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE template_tags (
+        template_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (template_id, tag_id),
+        FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE template_attribute_tags (
+        template_id INTEGER NOT NULL,
+        attribute_tag_id INTEGER NOT NULL,
+        PRIMARY KEY (template_id, attribute_tag_id),
+        FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
+        FOREIGN KEY (attribute_tag_id) REFERENCES attribute_tags(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // 打卡事项表
+    await db.execute('''
+      CREATE TABLE checkin_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        space_id INTEGER NOT NULL DEFAULT 1,
+        tag_id INTEGER,
+        attribute_tag_id INTEGER,
+        project_id INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    // 打卡记录表
+    await db.execute('''
+      CREATE TABLE checkin_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        entry_id INTEGER NOT NULL,
+        checkin_date TEXT NOT NULL,
+        checkin_time TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_item ON checkin_records(item_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_date ON checkin_records(checkin_date)');
 
     // 创建默认入口
     await db.insert('spaces', {
@@ -387,6 +504,76 @@ class AppDatabase {
     if (oldVersion < 6) {
       try { await db.execute('ALTER TABLE entries ADD COLUMN contact_person TEXT'); } catch (_) {}
       try { await db.execute('ALTER TABLE entries ADD COLUMN follow_up TEXT'); } catch (_) {}
+    }
+
+    // v6 → v7：确保 contact_person 和 follow_up 列存在（修复全新安装时建表遗漏）
+    if (oldVersion < 7) {
+      try { await db.execute('ALTER TABLE entries ADD COLUMN contact_person TEXT'); } catch (_) {}
+      try { await db.execute('ALTER TABLE entries ADD COLUMN follow_up TEXT'); } catch (_) {}
+    }
+
+    // v7 → v8：增加模板表
+    if (oldVersion < 8) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS templates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          title TEXT,
+          content TEXT NOT NULL DEFAULT '',
+          project_id INTEGER,
+          contact_person TEXT,
+          follow_up TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS template_tags (
+          template_id INTEGER NOT NULL,
+          tag_id INTEGER NOT NULL,
+          PRIMARY KEY (template_id, tag_id),
+          FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS template_attribute_tags (
+          template_id INTEGER NOT NULL,
+          attribute_tag_id INTEGER NOT NULL,
+          PRIMARY KEY (template_id, attribute_tag_id),
+          FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
+          FOREIGN KEY (attribute_tag_id) REFERENCES attribute_tags(id) ON DELETE CASCADE
+        )
+      ''');
+    }
+
+    // v8 → v9：增加打卡表
+    if (oldVersion < 9) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS checkin_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          space_id INTEGER NOT NULL DEFAULT 1,
+          tag_id INTEGER,
+          attribute_tag_id INTEGER,
+          project_id INTEGER,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS checkin_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id INTEGER NOT NULL,
+          entry_id INTEGER NOT NULL,
+          checkin_date TEXT NOT NULL,
+          checkin_time TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''');
+      try { await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_item ON checkin_records(item_id)'); } catch (_) {}
+      try { await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_date ON checkin_records(checkin_date)'); } catch (_) {}
     }
   }
 
@@ -719,6 +906,267 @@ class AppDatabase {
 
   // ==================== 记录操作 ====================
 
+  // ==================== 模板 CRUD ====================
+
+  /// 获取所有模板
+  Future<List<EntryTemplate>> getAllTemplates() async {
+    final db = await database;
+    final maps = await db.rawQuery('''
+      SELECT t.*, p.name as project_name
+      FROM templates t
+      LEFT JOIN projects p ON t.project_id = p.id
+      ORDER BY t.updated_at DESC
+    ''');
+    final templates = maps.map((map) => EntryTemplate.fromMap(map)).toList();
+    await _enrichTemplates(templates);
+    return templates;
+  }
+
+  Future<void> _enrichTemplates(List<EntryTemplate> templates) async {
+    for (final t in templates) {
+      if (t.id == null) continue;
+      t.tagIds.addAll(await _getTemplateTagIds(t.id!));
+      t.attributeTagIds
+          .addAll(await _getTemplateAttributeTagIds(t.id!));
+    }
+  }
+
+  /// 获取单个模板详情
+  Future<EntryTemplate?> getTemplate(int templateId) async {
+    final db = await database;
+    final maps = await db.rawQuery('''
+      SELECT t.*, p.name as project_name
+      FROM templates t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.id = ?
+    ''', [templateId]);
+    if (maps.isEmpty) return null;
+    final template = EntryTemplate.fromMap(maps.first);
+    template.tagIds.addAll(await _getTemplateTagIds(template.id!));
+    template.attributeTagIds
+        .addAll(await _getTemplateAttributeTagIds(template.id!));
+    return template;
+  }
+
+  Future<List<int>> _getTemplateTagIds(int templateId) async {
+    final db = await database;
+    final maps = await db.query('template_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    return maps.map((m) => m['tag_id'] as int).toList();
+  }
+
+  Future<List<int>> _getTemplateAttributeTagIds(int templateId) async {
+    final db = await database;
+    final maps = await db.query('template_attribute_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    return maps.map((m) => m['attribute_tag_id'] as int).toList();
+  }
+
+  /// 创建模板
+  Future<EntryTemplate> createTemplate(EntryTemplate template) async {
+    final db = await database;
+    final id = await db.insert('templates', template.toMap());
+
+    // 树状标签关联
+    if (template.tagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final tagId in template.tagIds) {
+        batch.insert('template_tags',
+            {'template_id': id, 'tag_id': tagId});
+      }
+      await batch.commit(noResult: true);
+    }
+
+    // 属性标签关联
+    if (template.attributeTagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final atId in template.attributeTagIds) {
+        batch.insert('template_attribute_tags',
+            {'template_id': id, 'attribute_tag_id': atId});
+      }
+      await batch.commit(noResult: true);
+    }
+
+    return template.copyWith(id: id);
+  }
+
+  /// 更新模板
+  Future<void> updateTemplate(int templateId, EntryTemplate template) async {
+    final db = await database;
+    await db.update('templates', template.toMap(),
+        where: 'id = ?', whereArgs: [templateId]);
+
+    // 替换树状标签关联
+    await db.delete('template_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    if (template.tagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final tagId in template.tagIds) {
+        batch.insert('template_tags',
+            {'template_id': templateId, 'tag_id': tagId});
+      }
+      await batch.commit(noResult: true);
+    }
+
+    // 替换属性标签关联
+    await db.delete('template_attribute_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    if (template.attributeTagIds.isNotEmpty) {
+      final batch = db.batch();
+      for (final atId in template.attributeTagIds) {
+        batch.insert('template_attribute_tags',
+            {'template_id': templateId, 'attribute_tag_id': atId});
+      }
+      await batch.commit(noResult: true);
+    }
+  }
+
+  /// 删除模板
+  Future<void> deleteTemplate(int templateId) async {
+    final db = await database;
+    await db.delete('template_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    await db.delete('template_attribute_tags',
+        where: 'template_id = ?', whereArgs: [templateId]);
+    await db.delete('templates', where: 'id = ?', whereArgs: [templateId]);
+  }
+
+  // ==================== 打卡 CRUD ====================
+
+  /// 获取入口下所有打卡事项
+  Future<List<CheckinItem>> getCheckinItems(int spaceId) async {
+    final db = await database;
+    final maps = await db.query('checkin_items',
+        where: 'space_id = ?',
+        whereArgs: [spaceId],
+        orderBy: 'sort_order ASC, id ASC');
+    return maps.map((map) => CheckinItem.fromMap(map)).toList();
+  }
+
+  /// 创建打卡事项
+  Future<CheckinItem> createCheckinItem(CheckinItem item) async {
+    final db = await database;
+    final id = await db.insert('checkin_items', item.toMap());
+    return item.copyWith(id: id);
+  }
+
+  /// 更新打卡事项
+  Future<void> updateCheckinItem(int itemId, CheckinItem item) async {
+    final db = await database;
+    await db.update('checkin_items', item.toMap(),
+        where: 'id = ?', whereArgs: [itemId]);
+  }
+
+  /// 删除打卡事项（同时删除关联打卡记录）
+  Future<void> deleteCheckinItem(int itemId) async {
+    final db = await database;
+    await db.delete('checkin_records',
+        where: 'item_id = ?', whereArgs: [itemId]);
+    await db.delete('checkin_items', where: 'id = ?', whereArgs: [itemId]);
+  }
+
+  /// 记录一次打卡
+  Future<CheckinRecord> recordCheckin(CheckinRecord record) async {
+    final db = await database;
+    final id = await db.insert('checkin_records', record.toMap());
+    return CheckinRecord(
+      id: id,
+      itemId: record.itemId,
+      entryId: record.entryId,
+      checkinDate: record.checkinDate,
+      checkinTime: record.checkinTime,
+      createdAt: record.createdAt,
+    );
+  }
+
+  /// 获取某事项在某日期范围内的打卡记录
+  Future<List<CheckinRecord>> getCheckinRecords(int itemId,
+      {DateTime? start, DateTime? end}) async {
+    final db = await database;
+    var where = 'item_id = ?';
+    final args = <Object?>[itemId];
+    if (start != null && end != null) {
+      where += ' AND checkin_date >= ? AND checkin_date <= ?';
+      args.add(
+          '${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}');
+      args.add(
+          '${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}');
+    }
+    final maps = await db.query('checkin_records',
+        where: where, whereArgs: args, orderBy: 'checkin_date DESC');
+    return maps.map((map) => CheckinRecord.fromMap(map)).toList();
+  }
+
+  /// 获取今日已打卡的事项ID集合
+  Future<Set<int>> getTodayCheckinItemIds(int spaceId) async {
+    final db = await database;
+    final today = DateTime.now();
+    final dateStr =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final maps = await db.rawQuery('''
+      SELECT cr.item_id FROM checkin_records cr
+      INNER JOIN checkin_items ci ON cr.item_id = ci.id
+      WHERE ci.space_id = ? AND cr.checkin_date = ?
+    ''', [spaceId, dateStr]);
+    return maps.map((m) => m['item_id'] as int).toSet();
+  }
+
+  /// 获取打卡统计
+  /// 返回: 每个事项ID → 该月打卡日期集合
+  Future<Map<int, Set<String>>> getMonthlyCheckinStats(
+      int spaceId, int year, int month) async {
+    final db = await database;
+    final monthStr =
+        '$year-${month.toString().padLeft(2, '0')}';
+    final maps = await db.rawQuery('''
+      SELECT cr.item_id, cr.checkin_date FROM checkin_records cr
+      INNER JOIN checkin_items ci ON cr.item_id = ci.id
+      WHERE ci.space_id = ? AND cr.checkin_date LIKE ?
+    ''', [spaceId, '$monthStr%']);
+    final result = <int, Set<String>>{};
+    for (final m in maps) {
+      final itemId = m['item_id'] as int;
+      final date = m['checkin_date'] as String;
+      result.putIfAbsent(itemId, () => {});
+      result[itemId]!.add(date);
+    }
+    return result;
+  }
+
+  /// 获取事项的连续打卡天数
+  Future<int> getStreakDays(int itemId) async {
+    final db = await database;
+    final maps = await db.query('checkin_records',
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+        orderBy: 'checkin_date DESC');
+    final dates = maps
+        .map((m) => m['checkin_date'] as String)
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (dates.isEmpty) return 0;
+    int streak = 0;
+    final today = DateTime.now();
+    var checkDate = DateTime(today.year, today.month, today.day);
+    for (final d in dates) {
+      final dateParts = d.split('-');
+      final date =
+          DateTime(int.parse(dateParts[0]), int.parse(dateParts[1]), int.parse(dateParts[2]));
+      final diff = checkDate.difference(date).inDays;
+      if (diff == 0) {
+        streak++;
+        checkDate = checkDate.subtract(const Duration(days: 1));
+      } else if (diff == 1) {
+        streak++;
+        checkDate = date.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
   /// 新增记录（含标签、属性标签、项目关联）
   Future<Entry> createEntry(String content,
       {String? title,
@@ -838,6 +1286,20 @@ class AppDatabase {
     return entries;
   }
 
+  /// 获取所有出现过的不重复对接人姓名
+  Future<List<String>> getAllContactPersons({int? spaceId}) async {
+    final db = await database;
+    final where = spaceId != null ? 'WHERE space_id = ?' : '';
+    final args = spaceId != null ? [spaceId] : null;
+    final maps = await db.rawQuery('''
+      SELECT DISTINCT contact_person FROM entries
+      ${spaceId != null ? 'WHERE space_id = ? AND' : 'WHERE'}
+      contact_person IS NOT NULL AND contact_person != ''
+      ORDER BY contact_person ASC
+    ''', args);
+    return maps.map((m) => m['contact_person'] as String).toList();
+  }
+
   /// 按日期范围获取记录
   Future<List<Entry>> getEntriesByDateRange(DateTime start, DateTime end,
       {int? spaceId}) async {
@@ -932,6 +1394,8 @@ class AppDatabase {
     DateTime? startDate,
     DateTime? endDate,
     String? keyword,
+    String? contactPerson,
+    bool? hasFollowUp,
   }) async {
     // Web 平台：用多步查询替代复杂 SQL，避免 EXISTS 子查询不支持的问题
     if (_isWeb) {
@@ -943,6 +1407,8 @@ class AppDatabase {
         startDate: startDate,
         endDate: endDate,
         keyword: keyword,
+        contactPerson: contactPerson,
+        hasFollowUp: hasFollowUp,
       );
     }
 
@@ -990,6 +1456,17 @@ class AppDatabase {
       args.addAll(projectIds.map((id) => id).toList());
     }
 
+    // 对接人筛选
+    if (contactPerson != null && contactPerson.isNotEmpty) {
+      conditions.add('e.contact_person LIKE ?');
+      args.add('%$contactPerson%');
+    }
+
+    // 有后续待办
+    if (hasFollowUp == true) {
+      conditions.add('e.follow_up IS NOT NULL AND e.follow_up != \'\'');
+    }
+
     final whereClause =
         conditions.isNotEmpty ? conditions.join(' AND ') : '1=1';
 
@@ -1019,6 +1496,8 @@ class AppDatabase {
     DateTime? startDate,
     DateTime? endDate,
     String? keyword,
+    String? contactPerson,
+    bool? hasFollowUp,
   }) async {
     // 1. 先获取该空间下所有记录
     var entries = await getAllEntries(spaceId: spaceId);
@@ -1062,6 +1541,23 @@ class AppDatabase {
         if (e.attributeTags.any((at) => at.name.toLowerCase().contains(kw))) return true;
         return false;
       }).toList();
+    }
+
+    // 对接人筛选
+    if (contactPerson != null && contactPerson.isNotEmpty) {
+      final kw = contactPerson.toLowerCase();
+      entries = entries
+          .where((e) =>
+              e.contactPerson?.toLowerCase().contains(kw) == true)
+          .toList();
+    }
+
+    // 有后续待办
+    if (hasFollowUp == true) {
+      entries = entries
+          .where((e) =>
+              e.followUp != null && e.followUp!.isNotEmpty)
+          .toList();
     }
 
     // 按时间倒序

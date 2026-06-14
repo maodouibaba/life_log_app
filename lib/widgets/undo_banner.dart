@@ -45,9 +45,9 @@ class UndoBanner extends StatelessWidget {
                     onRefresh?.call();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('撤销失败'),
-                        backgroundColor: Colors.red,
+                      SnackBar(
+                        content: const Text('撤销失败'),
+                        backgroundColor: Theme.of(context).colorScheme.error,
                       ),
                     );
                   }

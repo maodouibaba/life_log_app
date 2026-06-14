@@ -233,17 +233,20 @@ class _TagManagerPageState extends State<TagManagerPage> {
         ],
       ),
       body: rootTags.isEmpty
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.label_outline, size: 80, color: Colors.grey),
-                  SizedBox(height: 16),
+                  Icon(Icons.label_outline, size: 80,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                  const SizedBox(height: 16),
                   Text('还没有标签',
-                      style: TextStyle(fontSize: 18, color: Colors.grey)),
-                  SizedBox(height: 8),
+                      style: TextStyle(fontSize: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
                   Text('点击右上角 + 创建根标签',
-                      style: TextStyle(color: Colors.grey)),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 ],
               ),
             )
@@ -396,10 +399,11 @@ class _ReorderableTagListState extends State<_ReorderableTagList> {
                         value: 'edit', child: Text('重命名')),
                     const PopupMenuItem(
                         value: 'move', child: Text('移动层级（弹窗）')),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'delete',
                       child: Text('删除',
-                          style: TextStyle(color: Colors.red)),
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error)),
                     ),
                   ],
                   onSelected: (v) {

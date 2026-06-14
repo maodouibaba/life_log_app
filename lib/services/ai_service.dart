@@ -256,18 +256,20 @@ class AIService {
     }
     final entriesText = buffer.toString();
     final userPrompt = customPrompt?.isNotEmpty == true
-        ? customPrompt!
-        : '请对以下生活记录进行总结分析，包括：\n'
-            '1. 今天/这段时间的主要活动或事件\n'
-            '2. 关键主题和模式\n'
-            '3. 情绪或状态趋势\n'
-            '4. 有价值的洞察\n\n'
-            '记录内容如下：\n\n$entriesText\n\n'
-            '请用简洁清晰的中文输出总结。';
+        ? '用户要求：$customPrompt\n\n'
+            '请根据以下记录内容回答：\n\n$entriesText'
+        : '请对以下生活记录进行总结分析，严格按照以下结构输出：\n\n'
+            '1. 【做了什么】概括这段时间的主要事项，尽量包含量化数据（次数、时长、件数等）\n'
+            '2. 【分析重点】指出关键事项、重复出现的主题或模式\n'
+            '3. 【后续待办】还需要跟进或处理的事项\n\n'
+            '注意：只基于已有记录进行分析，不要引申或推测记录之外的内容。'
+            '用简洁清晰的中文输出。\n\n'
+            '记录内容如下：\n\n$entriesText';
 
-    final systemPrompt = '你是一位个人生活助理，擅长分析总结生活记录，'
-        '能够从零散的信息中提炼出有价值的见解。'
-        '请用简洁清晰的中文输出，适当使用分段和要点。';
+    final systemPrompt = '你是一位个人记录分析助手。'
+        '严格按照用户的要求分析记录，只陈述记录中已有的信息，'
+        '不要引申、推测或编造记录之外的内容。'
+        '回答简洁清晰，使用中文。';
 
     final isClaude = s.provider.name.contains('Claude');
 

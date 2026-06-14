@@ -10,6 +10,9 @@ class ThemeSettings {
   ThemeMode _mode = ThemeMode.system;
   ThemeMode get mode => _mode;
 
+  String _style = 'warm'; // 'warm' | 'classic'
+  String get style => _style;
+
   void setMode(ThemeMode mode) {
     _mode = mode;
     final v = mode == ThemeMode.system ? 'system'
@@ -18,12 +21,27 @@ class ThemeSettings {
     _notifyListeners();
   }
 
+  void setStyle(String style) {
+    _style = style;
+    _ThemeDbProvider().set('theme_style', style);
+    _notifyListeners();
+  }
+
+  String get styleLabel => _style == 'classic' ? '经典青绿' : '暖棕/金色';
+  IconData get styleIcon => _style == 'classic'
+      ? Icons.palette_outlined
+      : Icons.palette;
+
   /// 从数据库加载设置
   Future<void> load() async {
     final v = await _ThemeDbProvider().get('theme_mode');
     if (v == 'light') _mode = ThemeMode.light;
     else if (v == 'dark') _mode = ThemeMode.dark;
     else _mode = ThemeMode.system;
+
+    final s = await _ThemeDbProvider().get('theme_style');
+    if (s == 'classic') _style = 'classic';
+    else _style = 'warm';
   }
 
   String get label {

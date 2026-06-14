@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/tag.dart';
 import '../models/entry.dart';
@@ -5,6 +6,7 @@ import '../models/project.dart';
 import '../models/attribute_tag.dart';
 import '../models/attribute_tag_group.dart';
 import '../models/project_group.dart';
+import '../models/entry_template.dart';
 import '../database/app_database.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
@@ -32,13 +34,13 @@ class EntryEditorPage extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => EntryEditorPage(
-        entry: entry,
-        spaceId: spaceId,
-        useSheetMode: true,
+      // 不覆写 shape，使用全局 bottomSheetTheme（24px 圆角磨砂）
+      builder: (ctx) => _FrostedSheet(
+        child: EntryEditorPage(
+          entry: entry,
+          spaceId: spaceId,
+          useSheetMode: true,
+        ),
       ),
     );
   }
@@ -493,8 +495,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           ? _selectedAttributeTagIds.toList()
           : null;
 
-      final cp = _contactPersonController.text.trim();
-      final fu = _followUpController.text.trim();
+      final cp = _contactPerson.trim();
+      final fu = _followUp.trim();
 
       if (_isEditMode) {
         // 记录编辑前状态用于撤销
@@ -549,6 +551,183 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     }
   }
 
+  // ==================== 模板功能 ====================
+
+  /// 从模板导入
+  Future<void> _pickTemplate() async {
+    final templates = await _db.getAllTemplates();
+    if (!mounted) return;
+    if (templates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('还没有模板，请先在模板管理中创建')),
+      );
+      return;
+    }
+
+    final selected = await showDialog<EntryTemplate>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('从模板导入'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: templates.length > 6
+              ? ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: templates.length,
+                  itemBuilder: (ctx, i) => _buildTemplateTile(templates[i]),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: templates.map(_buildTemplateTile).toList(),
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消')),
+        ],
+      ),
+    );
+
+    if (selected != null) {
+      _applyTemplate(selected);
+    }
+  }
+
+  Widget _buildTemplateTile(EntryTemplate template) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.bookmark_outline, size: 18),
+      title: Text(template.name, style: const TextStyle(fontSize: 14)),
+      subtitle: template.content.isNotEmpty
+          ? Text(
+              template.content.length > 60
+                  ? '${template.content.substring(0, 60)}...'
+                  : template.content,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11),
+            )
+          : null,
+      onTap: () => Navigator.pop(context, template),
+    );
+  }
+
+  void _applyTemplate(EntryTemplate template) {
+    setState(() {
+      if (template.title != null) {
+        _titleController.text = template.title!;
+      }
+      if (template.content.isNotEmpty) {
+        _contentController.text = template.content;
+      }
+      // 树状标签（取最深标签作为叶标签）
+      if (template.tagIds.isNotEmpty) {
+        // 找最深标签
+        int? deepestId;
+        int maxDepth = -1;
+        for (final tagId in template.tagIds) {
+          final tag = _allTags.where((t) => t.id == tagId).firstOrNull;
+          if (tag == null) continue;
+          int depth = 0;
+          int? parentId = tag.parentId;
+          while (parentId != null) {
+            depth++;
+            parentId = _allTags
+                .where((t) => t.id == parentId)
+                .firstOrNull
+                ?.parentId;
+          }
+          if (depth > maxDepth) {
+            maxDepth = depth;
+            deepestId = tagId;
+          }
+        }
+        _selectedLeafTagId = deepestId;
+      }
+      // 属性标签
+      if (template.attributeTagIds.isNotEmpty) {
+        _selectedAttributeTagIds.clear();
+        _selectedAttributeTagIds.addAll(template.attributeTagIds);
+      }
+      // 项目
+      if (template.projectId != null) {
+        _selectedProjectId = template.projectId;
+        _selectedProjectName = template.projectName;
+      }
+      // 对接人
+      if (template.contactPerson != null) {
+        _contactPerson = template.contactPerson!;
+        _contactPersonController.text = _contactPerson;
+      }
+      // 后续待办
+      if (template.followUp != null) {
+        _followUp = template.followUp!;
+        _followUpController.text = _followUp;
+      }
+    });
+  }
+
+  /// 将当前记录保存为模板
+  Future<void> _saveAsTemplate() async {
+    final nameController = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('另存为模板'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入模板名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, nameController.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    if (name == null || name.isEmpty) return;
+
+    try {
+      final template = EntryTemplate(
+        name: name,
+        title: _titleController.text.trim().isNotEmpty
+            ? _titleController.text.trim()
+            : null,
+        content: _contentController.text.trim(),
+        tagIds: _effectiveTagIds.toList(),
+        attributeTagIds: _selectedAttributeTagIds.toList(),
+        projectId: _selectedProjectId,
+        projectName: _selectedProjectName,
+        contactPerson: _contactPerson.isNotEmpty ? _contactPerson : null,
+        followUp: _followUp.isNotEmpty ? _followUp : null,
+      );
+      await _db.createTemplate(template);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已保存为模板')),
+        );
+      }
+    } catch (e) {
+      debugPrint('保存模板失败：$e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存模板失败：$e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -584,11 +763,8 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   Widget _buildSheet(ThemeData theme) {
     return Container(
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      // 不设 background color，让 BottomSheet 主题的半透明色透过 BackdropFilter 磨砂效果
+      decoration: const BoxDecoration(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -651,6 +827,43 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   List<Widget> _buildFormSections(ThemeData theme) {
     final path = _selectedTagPath;
     return [
+      // ---- 从模板导入 ----
+      if (!_isEditMode)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: InkWell(
+            onTap: _pickTemplate,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer
+                    .withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.bookmark_outline,
+                      size: 16, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text('从模板导入',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      )),
+                  const Spacer(),
+                  Icon(Icons.chevron_right,
+                      size: 18, color: theme.colorScheme.primary),
+                ],
+              ),
+            ),
+          ),
+        ),
+
       // ---- 事项简介（点按弹出输入框） ----
       InkWell(
         onTap: _openTitleDialog,
@@ -729,6 +942,20 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       const SizedBox(height: 16),
 
       // ---- 对接人 ----
+      Row(
+        children: [
+          Icon(Icons.person_outline,
+              size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text('对接人',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+        ],
+      ),
+      const SizedBox(height: 6),
       _buildTextField(
         label: '对接人',
         icon: Icons.person_outline,
@@ -736,9 +963,23 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         hint: '如：张三',
         onChanged: (v) => setState(() => _contactPerson = v),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 16),
 
       // ---- 后续待办 ----
+      Row(
+        children: [
+          Icon(Icons.checklist_outlined,
+              size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text('后续待办',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+        ],
+      ),
+      const SizedBox(height: 6),
       _buildTextField(
         label: '后续待办',
         icon: Icons.checklist_outlined,
@@ -747,7 +988,40 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         onChanged: (v) => setState(() => _followUp = v),
       ),
 
-      const SizedBox(height: 20),
+      const SizedBox(height: 16),
+
+      // ---- 另存为模板 ----
+      InkWell(
+        onTap: _saveAsTemplate,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_add_outlined,
+                  size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text('另存为模板',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  )),
+              const Spacer(),
+              Icon(Icons.chevron_right,
+                  size: 18, color: theme.colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 16),
       const Divider(),
       const SizedBox(height: 12),
 
@@ -2130,6 +2404,29 @@ class _SectionHeader extends StatelessWidget {
               size: 18, color: theme.colorScheme.primary),
         ),
       ],
+    );
+  }
+}
+
+/// 磨砂玻璃效果 wrapper（用于 BottomSheet）
+class _FrostedSheet extends StatelessWidget {
+  final Widget child;
+  const _FrostedSheet({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor.withOpacity(0.0),
+          ),
+          child: child,
+        ),
+      ),
     );
   }
 }

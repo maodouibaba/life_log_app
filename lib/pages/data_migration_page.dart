@@ -72,12 +72,12 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                     padding: const EdgeInsets.all(8),
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.shade300),
+                      border: Border.all(color: Theme.of(context).colorScheme.tertiary.withOpacity(0.4)),
                     ),
                     child: SelectableText(warningMsg,
-                        style: const TextStyle(fontSize: 13, color: Colors.deepOrange)),
+                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onTertiaryContainer)),
                   ),
                 SelectableText('已保存到：$filePath',
                     style: const TextStyle(fontSize: 13)),
@@ -136,7 +136,10 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择文件失败：$e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('选择文件失败：$e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
@@ -430,14 +433,16 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                   ),
 
                   const SizedBox(height: 12),
-                  const Row(
+                  Row(
                     children: [
-                      Expanded(child: Divider()),
+                      const Expanded(child: Divider()),
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('或扫描文档目录', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('或扫描文档目录',
+                            style: TextStyle(fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       ),
-                      Expanded(child: Divider()),
+                      const Expanded(child: Divider()),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -501,18 +506,19 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
                             child: Column(
                               children: [
                                 Icon(Icons.folder_open,
-                                    size: 48, color: Colors.grey[400]),
+                                    size: 48,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
                                 const SizedBox(height: 8),
-                                const Text('没有找到备份文件',
-                                    style:
-                                        TextStyle(color: Colors.grey)),
+                                Text('没有找到备份文件',
+                                    style: TextStyle(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
                                 const SizedBox(height: 4),
                                 Text(
                                   '请先将 .json 备份文件放入 App 的文档目录\n然后点击刷新扫描',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.grey[500]),
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),

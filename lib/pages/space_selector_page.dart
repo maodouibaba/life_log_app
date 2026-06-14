@@ -114,13 +114,16 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.door_front_door_outlined,
-                            size: 80, color: Colors.grey[400]),
+                            size: 80,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
                         const SizedBox(height: 16),
-                        const Text('还没有入口',
-                            style: TextStyle(fontSize: 18, color: Colors.grey)),
+                        Text('还没有入口',
+                            style: TextStyle(fontSize: 18,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         const SizedBox(height: 8),
-                        const Text('创建一个入口开始记录',
-                            style: TextStyle(color: Colors.grey)),
+                        Text('创建一个入口开始记录',
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         const SizedBox(height: 24),
                         FilledButton.icon(
                           onPressed: _createSpace,

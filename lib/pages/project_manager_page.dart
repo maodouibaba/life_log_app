@@ -362,17 +362,20 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
         ],
       ),
       body: _projects.isEmpty && _groups.isEmpty
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_outlined, size: 80, color: Colors.grey),
-                  SizedBox(height: 16),
+                  Icon(Icons.folder_outlined, size: 80,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                  const SizedBox(height: 16),
                   Text('还没有项目',
-                      style: TextStyle(fontSize: 18, color: Colors.grey)),
-                  SizedBox(height: 8),
+                      style: TextStyle(fontSize: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
                   Text('点击右上角 + 创建项目',
-                      style: TextStyle(color: Colors.grey)),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 ],
               ),
             )
@@ -462,10 +465,11 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
                           fontWeight: FontWeight.w500)),
                 ),
               if (ungrouped.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text('（空）',
-                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      style: TextStyle(fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 )
               else
                 ...ungrouped.map((p) => _buildProjectTile(p, theme)),
@@ -510,9 +514,10 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
               const PopupMenuItem(value: 'edit', child: Text('重命名')),
               if (_groups.isNotEmpty)
                 const PopupMenuItem(value: 'move', child: Text('移动到分组')),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'delete',
-                child: Text('删除', style: TextStyle(color: Colors.red)),
+                child: Text('删除', style: TextStyle(
+                    color: Theme.of(context).colorScheme.error)),
               ),
             ],
             onSelected: (v) {
@@ -547,9 +552,10 @@ class _ProjectManagerPageState extends State<ProjectManagerPage> {
             const PopupMenuItem(value: 'edit', child: Text('重命名')),
             if (_groups.isNotEmpty)
               const PopupMenuItem(value: 'move', child: Text('移动到分组')),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
-              child: Text('删除', style: TextStyle(color: Colors.red)),
+              child: Text('删除', style: TextStyle(
+                  color: Theme.of(context).colorScheme.error)),
             ),
           ],
           onSelected: (v) {
@@ -684,10 +690,11 @@ class _ProjectGroupSection extends StatelessWidget {
                             itemBuilder: (context) => [
                               const PopupMenuItem(
                                   value: 'rename', child: Text('重命名分组')),
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                   value: 'delete',
                                   child: Text('删除分组',
-                                      style: TextStyle(color: Colors.red))),
+                                      style: TextStyle(
+                                          color: Theme.of(context).colorScheme.error))),
                             ],
                             onSelected: (v) {
                               switch (v) {
@@ -707,10 +714,11 @@ class _ProjectGroupSection extends StatelessWidget {
                 ),
                 if (isExpanded)
                   if (projects.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                       child: Text('（空）',
-                          style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          style: TextStyle(fontSize: 13,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant)),
                     )
                   else
                     ReorderableListView.builder(
@@ -791,10 +799,11 @@ class _ProjectGroupSection extends StatelessWidget {
                                       if (allGroups.isNotEmpty)
                                         const PopupMenuItem(
                                             value: 'move', child: Text('移动到分组')),
-                                      const PopupMenuItem(
+                                      PopupMenuItem(
                                         value: 'delete',
                                         child: Text('删除',
-                                            style: TextStyle(color: Colors.red)),
+                                            style: TextStyle(
+                                                color: Theme.of(context).colorScheme.error)),
                                       ),
                                     ],
                                     onSelected: (v) {

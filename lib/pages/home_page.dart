@@ -12,6 +12,8 @@ import 'list_view_page.dart';
 import 'data_migration_page.dart';
 import 'sync_settings_page.dart';
 import 'ai_summary_page.dart';
+import 'template_manager_page.dart';
+import 'checkin_page.dart';
 import '../services/export_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
@@ -134,6 +136,7 @@ class _HomePageState extends State<HomePage> {
     final ts = ThemeSettings();
     int selected = ts.mode == ThemeMode.system ? 0
         : ts.mode == ThemeMode.light ? 1 : 2;
+    String currentStyle = ts.style;
 
     await showDialog(
       context: context,
@@ -142,7 +145,26 @@ class _HomePageState extends State<HomePage> {
           title: const Text('选择主题'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ---- 主题风格选择 ----
+              const Text('主题风格',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              _ThemeOption(
+                icon: Icons.palette,
+                label: '暖棕/金色',
+                selected: currentStyle == 'warm',
+                onTap: () => setDialogState(() => currentStyle = 'warm'),
+              ),
+              _ThemeOption(
+                icon: Icons.palette_outlined,
+                label: '经典青绿',
+                selected: currentStyle == 'classic',
+                onTap: () => setDialogState(() => currentStyle = 'classic'),
+              ),
+              const Divider(height: 24),
+              // ---- 明暗模式选择 ----
               _ThemeOption(
                 icon: Icons.brightness_auto,
                 label: '跟随系统',
@@ -173,6 +195,9 @@ class _HomePageState extends State<HomePage> {
                 final mode = selected == 0 ? ThemeMode.system
                     : selected == 1 ? ThemeMode.light : ThemeMode.dark;
                 ts.setMode(mode);
+                if (currentStyle != ts.style) {
+                  ts.setStyle(currentStyle);
+                }
                 Navigator.pop(ctx);
               },
               child: const Text('确定'),
@@ -603,6 +628,19 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.check_circle_outline),
+            tooltip: '打卡',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CheckinPage(spaceId: _spaceId),
+                ),
+              );
+              _loadEntries();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.folder_outlined),
             tooltip: '项目管理',
             onPressed: () async {
@@ -619,6 +657,15 @@ class _HomePageState extends State<HomePage> {
             tooltip: '更多',
             onSelected: (value) async {
               switch (value) {
+                case 'template_manager':
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TemplateManagerPage(spaceId: _spaceId),
+                    ),
+                  );
+                  break;
                 case 'ai_summary':
                   if (!context.mounted) return;
                   await Navigator.push(
@@ -671,6 +718,15 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.auto_awesome),
                   title: Text('AI 总结'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'template_manager',
+                child: ListTile(
+                  leading: Icon(Icons.bookmark_outline),
+                  title: Text('模板管理'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -829,8 +885,8 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.error_outline,
-                            size: 64, color: Colors.red),
+                        Icon(Icons.error_outline,
+                            size: 64, color: Theme.of(context).colorScheme.error),
                         const SizedBox(height: 16),
                         const Text('读取数据失败',
                             style: TextStyle(fontSize: 18)),
@@ -839,7 +895,7 @@ class _HomePageState extends State<HomePage> {
                           _loadError!,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: Colors.grey[600], fontSize: 13),
+                              color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                         ),
                         const SizedBox(height: 16),
                         FilledButton.tonal(
@@ -851,19 +907,20 @@ class _HomePageState extends State<HomePage> {
                   ),
                 )
               : _entries.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.edit_note,
-                              size: 80, color: Colors.grey),
-                          SizedBox(height: 16),
+                              size: 80,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                          const SizedBox(height: 16),
                           Text('还没有记录',
                               style:
-                                  TextStyle(fontSize: 18, color: Colors.grey)),
-                          SizedBox(height: 8),
+                                  TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                          const SizedBox(height: 8),
                           Text('点击右下角 + 开始记录',
-                              style: TextStyle(color: Colors.grey)),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         ],
                       ),
                     )

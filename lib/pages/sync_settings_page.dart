@@ -184,7 +184,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             const SizedBox(height: 8),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.swap_horiz, color: Colors.teal),
+                leading: const Icon(Icons.swap_horiz,
+                    color: Color(0xFFD4A857)),
                 title: const Text('合并到本地'),
                 subtitle: const Text('将云端与本地数据合并，'
                     '冲突时保留较新的版本。本地数据不会丢失。',
@@ -195,7 +196,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             const SizedBox(height: 8),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.file_copy, color: Colors.red),
+                leading: const Icon(Icons.file_copy, color: Color(0xFFFFB4AB)),
                 title: const Text('覆盖恢复'),
                 subtitle: const Text('清空所有本地数据，替换为云端备份。'
                     '此操作不可撤销。',
@@ -481,13 +482,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _statusIsError
-                    ? Colors.red.withValues(alpha: 0.08)
-                    : Colors.green.withValues(alpha: 0.08),
+                    ? Theme.of(context).colorScheme.errorContainer.withOpacity(0.3)
+                    : Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: _statusIsError
-                      ? Colors.red.shade300
-                      : Colors.green.shade300,
+                      ? Theme.of(context).colorScheme.error.withOpacity(0.4)
+                      : Theme.of(context).colorScheme.primary.withOpacity(0.3),
                 ),
               ),
               child: Row(
@@ -495,7 +496,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   Icon(
                     _statusIsError ? Icons.error_outline : Icons.check_circle_outline,
                     size: 18,
-                    color: _statusIsError ? Colors.red : Colors.green,
+                    color: _statusIsError ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -503,7 +504,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                       _statusMsg!,
                       style: TextStyle(
                         fontSize: 13,
-                        color: _statusIsError ? Colors.red[800] : Colors.green[800],
+                        color: _statusIsError ? Theme.of(context).colorScheme.onErrorContainer : Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
                   ),
@@ -612,16 +613,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     ),
                   )
                 else if (!_loadedOnce)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Text('点击「刷新云端备份列表」查看',
-                        style: TextStyle(color: Colors.grey)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   )
                 else if (_remoteFiles.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Text('暂无云端备份文件，点击上方按钮上传',
-                        style: TextStyle(color: Colors.grey)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   )
                 else
                   ..._remoteFiles.map((file) => _buildFileTile(file, theme)),
