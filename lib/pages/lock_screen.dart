@@ -65,20 +65,33 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
       final ok = await PrivacySettings.authenticateBiometric();
       if (ok) {
         ps.authenticated = true;
-        if (mounted) setState(() => _locked = false);
-        if (mounted) setState(() => _loading = false);
+        if (mounted) setState(() {
+          _locked = false;
+          _loading = false;
+        });
         return;
       }
+      // 生物识别失败（取消/超时），提示用户
+      if (mounted) setState(() {
+        _error = ps.hasPassword ? null : '生物识别不可用，请设置密码';
+        _loading = false;
+      });
+      return;
     }
 
-    // 生物识别失败或不可用，用密码
+    // 生物识别不可用或失败，用密码
     if (ps.hasPassword) {
-      // 等待用户输入密码
       if (mounted) setState(() => _loading = false);
       return;
     }
 
-    if (mounted) setState(() => _loading = false);
+    // 既无生物识别也无密码 → 直接解锁（防止锁死）
+    ps.authenticated = true;
+    if (mounted) setState(() {
+      _locked = false;
+      _loading = false;
+      _error = null;
+    });
   }
 
   void _submitPassword() {

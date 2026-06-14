@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../database/app_database.dart';
@@ -23,11 +25,22 @@ class PrivacySettings {
   set password(String v) { _password = v; _save('privacy_password', v); }
   set authenticated(bool v) => _authenticated = v;
 
+  /// 当前平台是否真的支持生物识别
+  static bool get isBiometricSupported {
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) return false;
+    return true;
+  }
+
   /// 从数据库加载设置
   Future<void> load() async {
     final db = _PrivacyDbProvider();
     _enabled = (await db.get('privacy_enabled')) == '1';
-    _useBiometric = (await db.get('privacy_biometric')) != '0';
+    // Windows/Linux 不支持生物识别，强制关闭
+    if (!isBiometricSupported) {
+      _useBiometric = false;
+    } else {
+      _useBiometric = (await db.get('privacy_biometric')) != '0';
+    }
     _password = await db.get('privacy_password') ?? '';
   }
 
@@ -39,6 +52,7 @@ class PrivacySettings {
 
   /// 检查设备是否支持生物识别
   static Future<bool> canUseBiometric() async {
+    if (!isBiometricSupported) return false;
     final auth = LocalAuthentication();
     try {
       return await auth.canCheckBiometrics || await auth.isDeviceSupported();
@@ -47,7 +61,7 @@ class PrivacySettings {
     }
   }
 
-  /// 执行生物识别验证
+  /// 执行生物识别验证（带超时）
   static Future<bool> authenticateBiometric() async {
     final auth = LocalAuthentication();
     try {
@@ -57,7 +71,7 @@ class PrivacySettings {
           stickyAuth: true,
           biometricOnly: true,
         ),
-      );
+      ).timeout(const Duration(seconds: 15), onTimeout: () => false);
     } catch (_) {
       return false;
     }
