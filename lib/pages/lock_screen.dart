@@ -201,19 +201,6 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ],
-
-              // ---- 保底：无论如何都显示的直接进入按钮 ----
-              const SizedBox(height: 24),
-              TextButton(
-                onPressed: () {
-                  PrivacySettings().authenticated = true;
-                  setState(() => _locked = false);
-                },
-                child: Text(
-                  PrivacySettings().hasPassword ? '忘记密码？直接进入' : '直接进入',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ),
             ],
           ),
         ),
