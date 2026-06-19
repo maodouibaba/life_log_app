@@ -205,21 +205,48 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   }
 
   Future<void> _importFromFile(String filePath) async {
+    final theme = Theme.of(context);
+    final fileName = filePath.split(Platform.pathSeparator).last;
     final restoreType = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('恢复备份'),
-        content: Text('选择恢复方式：\n${filePath.split(Platform.pathSeparator).last}'),
+        title: const Text('选择恢复模式'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('备份文件：$fileName', style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 16),
+              const Text('请选择恢复方式：', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.swap_horiz, color: theme.colorScheme.primary),
+                  title: const Text('合并到本地'),
+                  subtitle: const Text(
+                    '将备份与本地数据合并，冲突时保留较新的版本。本地数据不会丢失。',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'merge'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.file_copy, color: theme.colorScheme.error),
+                  title: const Text('覆盖恢复'),
+                  subtitle: const Text(
+                    '清空所有本地数据，替换为备份内容。此操作不可撤销。',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'replace'),
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'merge'),
-            child: const Text('合并导入'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'replace'),
-            child: Text('全量替换',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
@@ -230,11 +257,42 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
     if (restoreType == null || !mounted) return;
 
+    // 覆盖模式再确认一次
+    if (restoreType == 'replace') {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('确认覆盖恢复'),
+          content: const Text(
+            '此操作将清空所有本地数据并替换为备份内容，\n'
+            '不可撤销。建议先导出一份当前数据的备份。\n\n确定继续吗？',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('确定覆盖',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true || !mounted) return;
+    }
+
     setState(() => _importing = true);
     try {
       final jsonText = await File(filePath).readAsString();
       if (restoreType == 'replace') {
         await _db.importFromJson(jsonText);
+        setState(() => _importing = false);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('恢复成功：$filePath')),
+        );
       } else {
         final result = await _db.mergeFromJson(jsonText);
         setState(() => _importing = false);
@@ -244,13 +302,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
             content: Text('合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条'),
           ),
         );
-        return;
       }
-      setState(() => _importing = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('恢复成功：$filePath')),
-      );
     } catch (e) {
       setState(() => _importing = false);
       if (!mounted) return;
