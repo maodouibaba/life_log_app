@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive_io.dart';
 import '../database/app_database.dart';
 import '../services/seed_data.dart';
+import '../services/photo_service.dart';
 
 /// 数据备份页面
 /// 导出全部数据为 JSON，支持分享和导入恢复
@@ -30,9 +32,62 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   final Set<String> _selectedPaths = {};
 
   Future<void> _export() async {
+    // 先让用户选择是否包含照片
+    final includePhotos = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('备份选项'),
+        content: const Text('是否在备份中包含照片？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('仅数据（JSON）'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('包含照片（ZIP）'),
+          ),
+        ],
+      ),
+    );
+    if (includePhotos == null || !mounted) return;
+
     setState(() => _exporting = true);
     try {
       final json = await _db.exportToJson();
+      final dir = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      String filePath;
+
+      if (includePhotos) {
+        // 构建 ZIP 包（使用 Archive + ZipEncoder 支持内存文件）
+        final zipPath = '${dir.path}/生活记录备份_$timestamp.zip';
+        final archive = Archive();
+
+        // 添加 JSON 文件
+        final jsonBytes = utf8.encode(json);
+        archive.addFile(ArchiveFile('生活记录备份.json', jsonBytes.length, jsonBytes));
+
+        // 添加照片
+        final photoFilenames = await _collectAllPhotoFilenames();
+        for (final fileName in photoFilenames) {
+          try {
+            final bytes = await PhotoService().getPhotoBytes(fileName);
+            if (bytes != null) {
+              archive.addFile(ArchiveFile('photos/$fileName', bytes.length, bytes));
+            }
+          } catch (_) {}
+        }
+
+        // 编码并写入
+        final encoded = ZipEncoder().encode(archive);
+        if (encoded == null) throw Exception('ZIP 编码失败');
+        await File(zipPath).writeAsBytes(encoded);
+        filePath = zipPath;
+      } else {
+        filePath = '${dir.path}/生活记录备份_$timestamp.json';
+        await File(filePath).writeAsString(json, flush: true);
+      }
 
       // 检查返回的 JSON 是否包含错误信息
       String? warningMsg;
@@ -49,11 +104,6 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
           }
         }
       } catch (_) {}
-
-      final dir = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final filePath = '${dir.path}/生活记录备份_$timestamp.json';
-      await File(filePath).writeAsString(json, flush: true);
 
       setState(() => _exporting = false);
 
@@ -118,6 +168,16 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         ),
       );
     }
+  }
+
+  /// 收集所有记录中用到的照片文件名
+  Future<Set<String>> _collectAllPhotoFilenames() async {
+    final allEntries = await _db.getAllEntries();
+    final filenames = <String>{};
+    for (final entry in allEntries) {
+      filenames.addAll(entry.photoFilenames);
+    }
+    return filenames;
   }
 
   /// 从 iPhone「文件」App 选择备份文件导入

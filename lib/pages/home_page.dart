@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import '../database/app_database.dart';
@@ -15,6 +16,7 @@ import 'ai_summary_page.dart';
 import 'template_manager_page.dart';
 import 'checkin_page.dart';
 import '../services/export_service.dart';
+import '../services/photo_service.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
 import '../services/theme_settings.dart';
@@ -549,14 +551,96 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportToExcel() async {
+    // 第一步：选择日期方式
+    final dateChoice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('选择导出时段', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('全部记录'),
+              onTap: () => Navigator.pop(ctx, 'all'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('选择单日'),
+              onTap: () => Navigator.pop(ctx, 'day'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.date_range),
+              title: const Text('选择时段'),
+              onTap: () => Navigator.pop(ctx, 'range'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (dateChoice == null || !mounted) return;
+
+    DateTime? startDate, endDate;
+
+    if (dateChoice == 'day') {
+      final day = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime.now(),
+      );
+      if (day == null || !mounted) return;
+      startDate = DateTime(day.year, day.month, day.day);
+      endDate = DateTime(day.year, day.month, day.day, 23, 59, 59);
+    } else if (dateChoice == 'range') {
+      final range = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime.now(),
+      );
+      if (range == null || !mounted) return;
+      startDate = range.start;
+      endDate = range.end;
+    }
+
+    // 第二步：选择是否包含照片
+    final photoChoice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('导出选项'),
+        content: const Text('是否在导出中包含照片？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'no'),
+            child: const Text('仅数据（Excel）'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'yes'),
+            child: const Text('包含照片（ZIP）'),
+          ),
+        ],
+      ),
+    );
+    if (photoChoice == null || !mounted) return;
+
     try {
       final exportService = ExportService();
-      final filePath = await exportService.exportToExcel(spaceId: _spaceId);
+      final filePath = await exportService.exportToExcel(
+        spaceId: _spaceId,
+        startDate: startDate,
+        endDate: endDate,
+        includePhotos: photoChoice == 'yes',
+      );
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('导出成功：$filePath'),
+          content: Text(photoChoice == 'yes'
+              ? 'ZIP 导出成功'
+              : '导出成功：$filePath'),
           action: SnackBarAction(
             label: '打开',
             onPressed: () => OpenFilex.open(filePath),
@@ -1233,6 +1317,38 @@ class _EntryCard extends StatelessWidget {
                               ),
                             );
                           }).toList(),
+                        ),
+                      ),
+                    // 照片缩略图
+                    if (entry.photoFilenames.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: SizedBox(
+                          height: 56,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: entry.photoFilenames.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 4),
+                            itemBuilder: (context, index) {
+                              final fileName = entry.photoFilenames[index];
+                              return FutureBuilder<String?>(
+                                future: PhotoService().getPhotoPath(fileName),
+                                builder: (context, snapshot) {
+                                  final path = snapshot.data;
+                                  if (path == null) return const SizedBox.shrink();
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Image.file(
+                                      File(path),
+                                      width: 56,
+                                      height: 56,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
                         ),
                       ),
                   ],

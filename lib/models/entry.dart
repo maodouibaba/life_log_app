@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'tag.dart';
 import 'attribute_tag.dart';
 
@@ -17,6 +18,7 @@ class Entry {
   final int spaceId;             // 所属入口
   final String? contactPerson;   // 对接人
   final String? followUp;        // 后续待办
+  final List<String> photoFilenames; // 照片文件名列表
 
   Entry({
     this.id,
@@ -31,12 +33,26 @@ class Entry {
     this.spaceId = 1,
     this.contactPerson,
     this.followUp,
+    List<String>? photoFilenames,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tags = tags ?? [],
-        attributeTags = attributeTags ?? [];
+        attributeTags = attributeTags ?? [],
+        photoFilenames = photoFilenames ?? [];
 
   factory Entry.fromMap(Map<String, dynamic> map) {
+    // 解析照片文件名（JSON 字符串 → List<String>）
+    List<String> parsePhotos(String? raw) {
+      if (raw == null || raw.isEmpty) return [];
+      try {
+        return (const JsonDecoder().convert(raw) as List<dynamic>)
+            .map((e) => e.toString())
+            .toList();
+      } catch (_) {
+        return [];
+      }
+    }
+
     return Entry(
       id: map['id'] as int?,
       title: map['title'] as String?,
@@ -48,6 +64,7 @@ class Entry {
       spaceId: (map['space_id'] as int?) ?? 1,
       contactPerson: map['contact_person'] as String?,
       followUp: map['follow_up'] as String?,
+      photoFilenames: parsePhotos(map['photo_filenames'] as String?),
     );
   }
 
@@ -62,6 +79,8 @@ class Entry {
       'space_id': spaceId,
       if (contactPerson != null) 'contact_person': contactPerson,
       if (followUp != null) 'follow_up': followUp,
+      'photo_filenames':
+          photoFilenames.isNotEmpty ? const JsonEncoder().convert(photoFilenames) : null,
     };
   }
 
@@ -82,6 +101,8 @@ class Entry {
     bool clearContactPerson = false,
     String? followUp,
     bool clearFollowUp = false,
+    List<String>? photoFilenames,
+    bool clearPhotoFilenames = false,
   }) {
     return Entry(
       id: id ?? this.id,
@@ -96,6 +117,7 @@ class Entry {
       spaceId: spaceId ?? this.spaceId,
       contactPerson: clearContactPerson ? null : (contactPerson ?? this.contactPerson),
       followUp: clearFollowUp ? null : (followUp ?? this.followUp),
+      photoFilenames: clearPhotoFilenames ? [] : (photoFilenames ?? this.photoFilenames),
     );
   }
 

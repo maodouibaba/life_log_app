@@ -1355,11 +1355,16 @@ class _GroupSectionState extends State<_GroupSection> {
                           spacing: 4,
                           runSpacing: 2,
                           children: entry.tags
-                              .map((t) => Text(
-                                    t.name,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: widget.theme.colorScheme.primary,
+                              .map((t) => Container(
+                                    constraints: const BoxConstraints(maxWidth: 120),
+                                    child: Text(
+                                      t.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: widget.theme.colorScheme.primary,
+                                      ),
                                     ),
                                   ))
                               .toList(),

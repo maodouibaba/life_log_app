@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/sync_service.dart';
+import '../services/icloud_service.dart';
 import '../database/app_database.dart';
 
-/// 坚果云 WebDAV 同步设置页面
-/// 配置连接信息、上传/下载/删除备份文件
+/// 网络同步页面
+/// 包含两个 Tab：坚果云 WebDAV 和 iCloud Drive
 class SyncSettingsPage extends StatefulWidget {
   const SyncSettingsPage({super.key});
 
@@ -11,7 +12,56 @@ class SyncSettingsPage extends StatefulWidget {
   State<SyncSettingsPage> createState() => _SyncSettingsPageState();
 }
 
-class _SyncSettingsPageState extends State<SyncSettingsPage> {
+class _SyncSettingsPageState extends State<SyncSettingsPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('网络同步'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.cloud_outlined), text: '坚果云'),
+            Tab(icon: Icon(Icons.cloud_queue), text: 'iCloud'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: const [
+          _WebDavTab(),
+          _ICloudTab(),
+        ],
+      ),
+    );
+  }
+}
+
+// ===================== 坚果云 WebDAV Tab =====================
+
+class _WebDavTab extends StatefulWidget {
+  const _WebDavTab();
+
+  @override
+  State<_WebDavTab> createState() => _WebDavTabState();
+}
+
+class _WebDavTabState extends State<_WebDavTab> {
   final _urlController = TextEditingController(
     text: 'https://dav.jianguoyun.com/dav/',
   );
@@ -21,14 +71,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   SyncConfig? _config;
   bool _testing = false;
   bool _uploading = false;
-  bool _downloading = false;
   bool _loadingFiles = false;
   String? _statusMsg;
   bool _statusIsError = false;
 
   List<RemoteFile> _remoteFiles = [];
   bool _loadedOnce = false;
-  // 批量选择
   bool _selectMode = false;
   final Set<String> _selectedFileNames = {};
 
@@ -49,14 +97,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
-  SyncConfig? _buildConfig() {
-    final url = _urlController.text.trim();
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
-    if (url.isEmpty || username.isEmpty || password.isEmpty) return null;
-    return SyncConfig(url: url, username: username, password: password);
-  }
-
   void _setStatus(String msg, {bool isError = false}) {
     setState(() {
       _statusMsg = msg;
@@ -64,265 +104,110 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     });
   }
 
-  // ==================== 连接测试 ====================
+  Future<void> _saveConfig() async {
+    final config = SyncConfig(
+      url: _urlController.text.trim(),
+      username: _usernameController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
+    await SyncService.saveConfig(config);
+    setState(() => _config = config);
+  }
 
   Future<void> _testConnection() async {
-    final config = _buildConfig();
-    if (config == null) {
-      _setStatus('请填写完整的连接信息（地址、邮箱、应用密码）', isError: true);
-      return;
-    }
     setState(() => _testing = true);
-    _setStatus('正在测试连接...');
-
-    final ok = await SyncService.testConnection(config);
-    if (!mounted) return;
-    setState(() => _testing = false);
-
-    if (ok) {
-      await SyncService.saveConfig(config);
-      setState(() => _config = config);
-      _setStatus('✅ 连接成功！');
-      _refreshFileList();
-    } else {
-      _setStatus('❌ 连接失败，请检查地址和密码是否正确', isError: true);
-    }
-  }
-
-  // ==================== 列出云端文件 ====================
-
-  Future<void> _refreshFileList() async {
-    final config = _config;
-    if (config == null) return;
-
-    setState(() => _loadingFiles = true);
+    _setStatus('正在测试...');
     try {
-      final files = await SyncService.listBackups(config);
-      if (!mounted) return;
-      setState(() {
-        _remoteFiles = files;
-        _loadingFiles = false;
-        _loadedOnce = true;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loadingFiles = false;
-        _loadedOnce = true;
-      });
-      _setStatus('❌ 获取备份列表失败：$e', isError: true);
-    }
-  }
-
-  // ==================== 上传 ====================
-
-  Future<void> _uploadBackup() async {
-    final config = _config;
-    if (config == null) {
-      _setStatus('请先测试连接并保存配置', isError: true);
-      return;
-    }
-
-    // 确认上传
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('上传到坚果云'),
-        content: const Text('将当前本地所有数据上传到坚果云保存。\n'
-            '不会覆盖云端已有文件，而是创建新的时间戳备份。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定上传'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    setState(() => _uploading = true);
-    _setStatus('正在上传...');
-
-    try {
-      final fileName = await SyncService.uploadBackup(config);
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _setStatus('✅ 上传成功：$fileName');
-      _refreshFileList();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _setStatus('❌ 上传失败：$e', isError: true);
-    }
-  }
-
-  // ==================== 下载 ====================
-
-  Future<void> _downloadBackup(RemoteFile file) async {
-    final config = _config;
-    if (config == null) return;
-
-    final sizeStr = _formatSize(file.size);
-    final dateStr = _formatDateTime(file.modified);
-    // 选择恢复模式：覆盖 or 合并
-    final mode = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('选择恢复模式'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('备份文件：${file.name}', style: const TextStyle(fontSize: 13)),
-            Text('备份时间：$dateStr', style: const TextStyle(fontSize: 13)),
-            Text('文件大小：$sizeStr', style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 16),
-            const Text('请选择恢复方式：', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.swap_horiz,
-                    color: Color(0xFFD4A857)),
-                title: const Text('合并到本地'),
-                subtitle: const Text('将云端与本地数据合并，'
-                    '冲突时保留较新的版本。本地数据不会丢失。',
-                    style: TextStyle(fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, SyncService.modeMerge),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.file_copy, color: Color(0xFFFFB4AB)),
-                title: const Text('覆盖恢复'),
-                subtitle: const Text('清空所有本地数据，替换为云端备份。'
-                    '此操作不可撤销。',
-                    style: TextStyle(fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, SyncService.modeOverwrite),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
-        ],
-      ),
-    );
-    if (mode == null) return;
-
-    // 覆盖模式再确认一次
-    if (mode == SyncService.modeOverwrite) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('确认覆盖恢复'),
-          content: const Text('此操作将清空所有本地数据并替换为备份内容，\n'
-              '不可撤销。建议先上传一份当前数据的备份。\n\n确定继续吗？'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('确定覆盖',
-                  style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-            ),
-          ],
-        ),
+      final config = SyncConfig(
+        url: _urlController.text.trim(),
+        username: _usernameController.text.trim(),
+        password: _passwordController.text.trim(),
       );
-      if (confirm != true) return;
-    }
-
-    setState(() => _downloading = true);
-    _setStatus('正在下载...');
-
-    try {
-      final jsonContent =
-          await SyncService.downloadBackup(config, file.name);
-      if (!mounted) return;
-
-      final db = AppDatabase();
-      if (mode == SyncService.modeMerge) {
-        // 合并模式
-        final stats = await db.mergeFromJson(jsonContent);
-        if (!mounted) return;
-        setState(() => _downloading = false);
-        final errors = stats['skipped_errors'] as int? ?? 0;
-        final errHint = errors > 0 ? '（$errors 条异常已跳过）' : '';
-        _setStatus('✅ 合并成功！新增 ${stats['added_entries']} 条记录、'
-            '更新 ${stats['updated_entries']} 条、新增 ${stats['added_tags']} 个标签。'
-            '$errHint');
+      final ok = await SyncService.testConnection(config);
+      if (ok) {
+        _setStatus('✅ 连接成功');
+        await _saveConfig();
+        _refreshFileList();
       } else {
-        // 覆盖模式（原有逻辑）
-        await db.importFromJson(jsonContent);
-        if (!mounted) return;
-        setState(() => _downloading = false);
-        _setStatus('✅ 覆盖恢复成功！本地数据已替换为云端备份。');
+        _setStatus('❌ 连接失败', isError: true);
       }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _downloading = false);
-      _setStatus('❌ 恢复失败：$e', isError: true);
+      _setStatus('❌ 连接异常：$e', isError: true);
     }
+    setState(() => _testing = false);
   }
 
-  // ==================== 删除 ====================
-
-  Future<void> _deleteRemoteBackup(RemoteFile file) async {
-    final config = _config;
-    if (config == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除云端备份'),
-        content: Text('确定要删除 "${file.name}" 吗？\n\n'
-            '此操作将从坚果云中永久删除该备份文件。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('删除',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
+  Future<void> _uploadBackup() async {
+    setState(() => _uploading = true);
+    _setStatus('正在上传...');
     try {
-      await SyncService.deleteBackup(config, file.name);
-      if (!mounted) return;
-      _setStatus('已删除：${file.name}');
+      await SyncService.uploadBackup(_config!);
+      _setStatus('✅ 上传成功');
       _refreshFileList();
     } catch (e) {
-      if (!mounted) return;
-      _setStatus('❌ 删除失败：$e', isError: true);
+      _setStatus('❌ 上传异常：$e', isError: true);
     }
+    setState(() => _uploading = false);
   }
 
-  // ==================== 批量删除 ====================
-
-  Future<void> _batchDeleteRemote() async {
-    if (_selectedFileNames.isEmpty) return;
-    final config = _config;
-    if (config == null) return;
+  Future<void> _downloadAndRestore(RemoteFile file) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('批量删除'),
-        content: Text('确定要删除选中的 ${_selectedFileNames.length} 个云端备份文件吗？'),
+        title: const Text('恢复备份'),
+        content: Text('确定要恢复「${file.name}」吗？\n\n⚠️ 恢复会替换本地所有数据，不可撤销！'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('恢复',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    _setStatus('正在下载...');
+    try {
+      final json = await SyncService.downloadBackup(_config!, file.name);
+      if (json == null) {
+        _setStatus('❌ 下载失败', isError: true);
+        return;
+      }
+      final db = AppDatabase();
+      await db.importFromJson(json);
+      _setStatus('✅ 恢复完成');
+    } catch (e) {
+      _setStatus('❌ 恢复异常：$e', isError: true);
+    }
+  }
+
+  Future<void> _refreshFileList() async {
+    if (_config == null) return;
+    setState(() => _loadingFiles = true);
+    try {
+      _remoteFiles = await SyncService.listBackups(_config!);
+      _loadedOnce = true;
+    } catch (e) {
+      _setStatus('❌ 刷新列表失败：$e', isError: true);
+    }
+    setState(() => _loadingFiles = false);
+  }
+
+  Future<void> _deleteSelectedFiles() async {
+    if (_selectedFileNames.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除备份'),
+        content: Text('确定要删除选中的 ${_selectedFileNames.length} 个备份吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('删除',
@@ -331,55 +216,233 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         ],
       ),
     );
-    if (confirm == true) {
-      int ok = 0;
-      for (final name in _selectedFileNames) {
-        try {
-          await SyncService.deleteBackup(config, name);
-          ok++;
-        } catch (_) {}
-      }
-      _selectedFileNames.clear();
-      _selectMode = false;
-      setState(() {});
-      _setStatus('已批量删除 $ok 个云端备份文件');
-      _refreshFileList();
+    if (confirm != true) return;
+    for (final name in _selectedFileNames) {
+      await SyncService.deleteBackup(_config!, name);
     }
+    _selectedFileNames.clear();
+    _refreshFileList();
   }
 
-  // ==================== 清除配置 ====================
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
 
-  Future<void> _clearConfig() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清除同步配置'),
-        content: const Text('将清除已保存的坚果云账号和密码，确定吗？'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('确定清除',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 连接信息
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.cloud_outlined, size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    const Text('坚果云 WebDAV 配置',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _urlController,
+                  decoration: const InputDecoration(
+                    labelText: 'WebDAV 地址',
+                    hintText: 'https://dav.jianguoyun.com/dav/',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    labelText: '邮箱',
+                    hintText: '坚果云注册邮箱',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '应用密码',
+                    hintText: '登录坚果云→安全选项→添加第三方应用密码',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _testing ? null : _testConnection,
+                    icon: _testing
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.wifi_tethering, size: 18),
+                    label: Text(_testing ? '测试中...' : '测试连接并保存'),
+                  ),
+                ),
+                if (_statusMsg != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(_statusMsg!,
+                        style: TextStyle(
+                          color: _statusIsError
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.primary,
+                          fontSize: 13,
+                        )),
+                  ),
+              ],
+            ),
           ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+        ),
+        const SizedBox(height: 16),
 
-    await SyncService.clearConfig();
-    if (!mounted) return;
-    setState(() {
-      _config = null;
-      _usernameController.clear();
-      _passwordController.clear();
-      _remoteFiles = [];
-      _loadedOnce = false;
-      _statusMsg = '已清除配置';
-      _statusIsError = false;
-    });
+        // 上传/刷新按钮
+        if (_config != null)
+          Column(
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _uploading ? null : _uploadBackup,
+                  icon: _uploading
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cloud_upload_outlined, size: 18),
+                  label: Text(_uploading ? '上传中...' : '上传到坚果云'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _loadingFiles ? null : _refreshFileList,
+                icon: Icon(Icons.refresh, size: 18,
+                    color: theme.colorScheme.primary),
+                label: Text('刷新云端备份列表',
+                    style: TextStyle(color: theme.colorScheme.primary)),
+              ),
+            ],
+          ),
+
+        // 云端文件列表
+        if (_config != null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text('云端备份文件',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                      const Spacer(),
+                      Text('${_remoteFiles.length} 个',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_loadingFiles)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (!_loadedOnce)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: Text('点击「刷新」查看云端备份')),
+                    )
+                  else if (_remoteFiles.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: Text('暂无云端备份文件')),
+                    )
+                  else
+                    ..._remoteFiles.map((file) => ListTile(
+                          dense: true,
+                          leading: _selectMode
+                              ? Checkbox(
+                                  value: _selectedFileNames.contains(file.name),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _selectedFileNames.add(file.name);
+                                      } else {
+                                        _selectedFileNames.remove(file.name);
+                                      }
+                                    });
+                                  },
+                                )
+                              : Icon(Icons.description_outlined, size: 18,
+                                  color: theme.colorScheme.primary),
+                          title: Text(file.name,
+                              style: const TextStyle(fontSize: 13)),
+                          subtitle: Text(
+                            '${file.modified} · ${file.size}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          onTap: () {
+                            if (_selectMode) {
+                              setState(() {
+                                if (_selectedFileNames.contains(file.name)) {
+                                  _selectedFileNames.remove(file.name);
+                                } else {
+                                  _selectedFileNames.add(file.name);
+                                }
+                              });
+                            } else {
+                              _downloadAndRestore(file);
+                            }
+                          },
+                        )),
+                  if (_selectMode && _selectedFileNames.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _deleteSelectedFiles,
+                          icon: Icon(Icons.delete_outline,
+                              size: 18, color: theme.colorScheme.error),
+                          label: Text('删除选中 (${_selectedFileNames.length})'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_remoteFiles.isNotEmpty)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _selectMode = !_selectMode;
+                        if (!_selectMode) _selectedFileNames.clear();
+                      }),
+                      child: Text(_selectMode ? '完成' : '选择'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -389,345 +452,330 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     _passwordController.dispose();
     super.dispose();
   }
+}
 
-  // ==================== UI ====================
+// ===================== iCloud Drive Tab =====================
+
+class _ICloudTab extends StatefulWidget {
+  const _ICloudTab();
+
+  @override
+  State<_ICloudTab> createState() => _ICloudTabState();
+}
+
+class _ICloudTabState extends State<_ICloudTab> {
+  final ICloudService _service = ICloudService();
+  final AppDatabase _db = AppDatabase();
+  String? _selectedDir;
+  List<Map<String, dynamic>> _files = [];
+  bool _loadingFiles = false;
+  bool _uploading = false;
+  String? _statusMsg;
+  bool _statusIsError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDir = _service.lastSelectedDir;
+  }
+
+  void _setStatus(String msg, {bool isError = false}) {
+    setState(() {
+      _statusMsg = msg;
+      _statusIsError = isError;
+    });
+  }
+
+  Future<void> _pickDir() async {
+    final dir = await _service.pickDirectory();
+    if (dir != null) {
+      setState(() => _selectedDir = dir);
+      _refreshFiles();
+    }
+  }
+
+  Future<void> _refreshFiles() async {
+    if (_selectedDir == null) return;
+    setState(() => _loadingFiles = true);
+    try {
+      _files = await _service.listBackupFiles(_selectedDir!);
+    } catch (e) {
+      _setStatus('❌ 刷新失败：$e', isError: true);
+    }
+    setState(() => _loadingFiles = false);
+  }
+
+  Future<void> _uploadToICloud() async {
+    if (_selectedDir == null) return;
+    setState(() => _uploading = true);
+    _setStatus('正在上传...');
+    try {
+      final json = await _db.exportToJson();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = '生活记录备份_$timestamp.json';
+      final ok = await _service.saveBackupFile(_selectedDir!, fileName, json);
+      if (ok) {
+        _setStatus('✅ 上传成功');
+        _refreshFiles();
+      } else {
+        _setStatus('❌ 上传失败', isError: true);
+      }
+    } catch (e) {
+      _setStatus('❌ 上传异常：$e', isError: true);
+    }
+    setState(() => _uploading = false);
+  }
+
+  Future<void> _restoreFromFile(String filePath, String fileName) async {
+    final isZip = fileName.endsWith('.zip');
+    final msg = isZip
+        ? '恢复 ZIP 备份（含照片）会替换本地所有数据'
+        : '恢复会替换本地所有数据，不可撤销！';
+
+    final restoreType = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('恢复备份'),
+        content: Text('确定要恢复「$fileName」吗？\n\n⚠️ $msg'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'merge'),
+            child: const Text('合并导入'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'replace'),
+            child: Text('全量替换',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (restoreType == null || !mounted) return;
+
+    try {
+      if (isZip) {
+        // ZIP 文件需要解压后读取 JSON
+        final content = await _service.readBackupFile(filePath);
+        if (content == null) {
+          _setStatus('❌ 读取文件失败', isError: true);
+          return;
+        }
+        if (restoreType == 'replace') {
+          await _db.importFromJson(content);
+        } else {
+          final result = await _db.mergeFromJson(content);
+          _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
+        }
+      } else {
+        final content = await _service.readBackupFile(filePath);
+        if (content == null) {
+          _setStatus('❌ 读取文件失败', isError: true);
+          return;
+        }
+        if (restoreType == 'replace') {
+          await _db.importFromJson(content);
+        } else {
+          final result = await _db.mergeFromJson(content);
+          _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
+        }
+      }
+    } catch (e) {
+      _setStatus('❌ 恢复异常：$e', isError: true);
+    }
+  }
+
+  Future<void> _deleteFile(String filePath) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除备份'),
+        content: Text('确定要删除此备份吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('删除',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _service.deleteBackupFile(filePath);
+      _refreshFiles();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('坚果云同步'),
-        actions: [
-          if (_config != null)
-            IconButton(
-              icon: const Icon(Icons.logout, size: 20),
-              tooltip: '清除配置',
-              onPressed: _clearConfig,
-            ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // ---- 连接设置 ----
-          _buildSectionCard(
-            theme: theme,
-            icon: Icons.cloud_outlined,
-            title: '连接设置',
-            children: [
-              const Text(
-                '配置坚果云 WebDAV 后，可在多设备间手动同步数据。\n'
-                '请在坚果云官网 → 安全选项 → 添加「第三方应用密码」获取密码。',
-                style: TextStyle(fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _urlController,
-                decoration: const InputDecoration(
-                  labelText: 'WebDAV 地址',
-                  hintText: 'https://dav.jianguoyun.com/dav/',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: '用户名（坚果云注册邮箱）',
-                  hintText: 'example@jianguoyun.com',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                style: const TextStyle(fontSize: 14),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '密码（第三方应用密码）',
-                  hintText: '在坚果云官网生成的应用密码',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: _testing ? null : _testConnection,
-                  icon: _testing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.wifi_tethering),
-                  label: Text(_testing ? '测试中...' : '测试连接并保存'),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // ---- 状态消息 ----
-          if (_statusMsg != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _statusIsError
-                    ? Theme.of(context).colorScheme.errorContainer.withOpacity(0.3)
-                    : Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _statusIsError
-                      ? Theme.of(context).colorScheme.error.withOpacity(0.4)
-                      : Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _statusIsError ? Icons.error_outline : Icons.check_circle_outline,
-                    size: 18,
-                    color: _statusIsError ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SelectableText(
-                      _statusMsg!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _statusIsError ? Theme.of(context).colorScheme.onErrorContainer : Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // ---- 同步操作 ----
-          if (_config != null) ...[
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              theme: theme,
-              icon: Icons.sync,
-              title: '同步操作',
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // iCloud 说明
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _uploading ? null : _uploadBackup,
-                    icon: _uploading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.cloud_upload_outlined),
-                    label: Text(_uploading ? '上传中...' : '上传到坚果云'),
-                  ),
+                Row(
+                  children: [
+                    Icon(Icons.cloud_queue, size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    const Text('iCloud Drive 同步',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ],
                 ),
                 const SizedBox(height: 8),
+                Text(
+                  '通过 iCloud Drive 文件共享实现多设备同步。\n'
+                  '选择一个 iCloud Drive 目录，备份文件将保存到该目录，'
+                  '其他设备可从同一目录读取恢复。',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _refreshFileList,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('刷新云端备份列表'),
+                    onPressed: _pickDir,
+                    icon: const Icon(Icons.folder_open, size: 18),
+                    label: Text(
+                      _selectedDir != null
+                          ? '已选择目录'
+                          : '选择 iCloud Drive 目录',
+                    ),
                   ),
                 ),
+                if (_selectedDir != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _selectedDir!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 16),
 
-            const SizedBox(height: 16),
+        if (_selectedDir != null)
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _uploading ? null : _uploadToICloud,
+              icon: _uploading
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.cloud_upload_outlined, size: 18),
+              label: Text(_uploading ? '上传中...' : '上传备份到 iCloud'),
+            ),
+          ),
+        if (_selectedDir != null)
+          const SizedBox(height: 8),
 
-            // ---- 云端文件列表 ----
-            _buildSectionCard(
-              theme: theme,
-              icon: Icons.folder_outlined,
-              title: _selectMode ? '云端备份文件（已选 ${_selectedFileNames.length}）' : '云端备份文件',
-              children: [
-                // 批量选择操作栏
-                if (_remoteFiles.isNotEmpty)
+        // 文件列表
+        if (_selectedDir != null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          _selectMode = !_selectMode;
-                          if (!_selectMode) _selectedFileNames.clear();
-                        }),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _selectMode ? Icons.close : Icons.checklist,
-                              size: 16,
-                              color: theme.colorScheme.primary,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              _selectMode ? '取消' : '选择',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                          ],
-                        ),
+                      Text('iCloud 备份文件',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: _refreshFiles,
+                        icon: Icon(Icons.refresh, size: 16,
+                            color: theme.colorScheme.primary),
+                        label: Text('刷新',
+                            style: TextStyle(
+                                color: theme.colorScheme.primary, fontSize: 12)),
                       ),
-                      if (_selectMode && _selectedFileNames.isNotEmpty) ...[
-                        const SizedBox(width: 12),
-                        GestureDetector(
-                          onTap: _batchDeleteRemote,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.delete_outline,
-                                  size: 16,
-                                  color: theme.colorScheme.error),
-                              const SizedBox(width: 2),
-                              Text('删除所选（${_selectedFileNames.length}）',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.colorScheme.error,
-                                  )),
-                            ],
-                          ),
-                        ),
-                      ],
                     ],
                   ),
-                const SizedBox(height: 8),
-                if (_loadingFiles)
-                  const Center(
-                    child: Padding(
+                  if (_loadingFiles)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (_files.isEmpty)
+                    const Padding(
                       padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if (!_loadedOnce)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('点击「刷新云端备份列表」查看',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  )
-                else if (_remoteFiles.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('暂无云端备份文件，点击上方按钮上传',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  )
-                else
-                  ..._remoteFiles.map((file) => _buildFileTile(file, theme)),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionCard({
-    required ThemeData theme,
-    required IconData icon,
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileTile(RemoteFile file, ThemeData theme) {
-    final sizeStr = _formatSize(file.size);
-    final dateStr = _formatDateTime(file.modified);
-    final isSelected = _selectedFileNames.contains(file.name);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        leading: _selectMode
-            ? Checkbox(
-                value: isSelected,
-                onChanged: (_) => setState(() {
-                  if (isSelected) {
-                    _selectedFileNames.remove(file.name);
-                  } else {
-                    _selectedFileNames.add(file.name);
-                  }
-                }),
-              )
-            : Icon(Icons.description, color: theme.colorScheme.primary),
-        title: Text(file.name, style: const TextStyle(fontSize: 13)),
-        subtitle: Text('$sizeStr · $dateStr',
-            style: const TextStyle(fontSize: 11)),
-        trailing: _selectMode
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: _downloading ? null : () => _downloadBackup(file),
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
-                    ),
-                    child: const Text('恢复'),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.delete_outline,
-                        size: 18, color: theme.colorScheme.onSurfaceVariant),
-                    tooltip: '删除云端备份',
-                    onPressed: () => _deleteRemoteBackup(file),
-                  ),
+                      child: Center(child: Text('暂无备份文件\n请先上传或手动放入 iCloud Drive')),
+                    )
+                  else
+                    ..._files.map((f) => ListTile(
+                          dense: true,
+                          leading: Icon(Icons.description_outlined, size: 18,
+                              color: theme.colorScheme.primary),
+                          title: Text(f['name'] as String,
+                              style: const TextStyle(fontSize: 13)),
+                          subtitle: Text(
+                            '${_service.formatSize(f['size'] as int)} · ${f['modified']}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          trailing: PopupMenuButton<String>(
+                            itemBuilder: (ctx) => [
+                              const PopupMenuItem(
+                                  value: 'restore', child: Text('恢复'),
+                                  ),
+                              const PopupMenuItem(
+                                  value: 'delete', child: Text('删除'),
+                                  ),
+                            ],
+                            onSelected: (v) {
+                              if (v == 'restore') {
+                                _restoreFromFile(
+                                    f['path'] as String, f['name'] as String);
+                              } else if (v == 'delete') {
+                                _deleteFile(f['path'] as String);
+                              }
+                            },
+                          ),
+                        )),
                 ],
               ),
-        onTap: _selectMode
-            ? () => setState(() {
-                  if (isSelected) {
-                    _selectedFileNames.remove(file.name);
-                  } else {
-                    _selectedFileNames.add(file.name);
-                  }
-                })
-            : null,
-        dense: true,
-      ),
+            ),
+          ),
+
+        if (_statusMsg != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_statusMsg!,
+                style: TextStyle(
+                  color: _statusIsError
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.primary,
+                  fontSize: 13,
+                )),
+          ),
+      ],
     );
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
-  String _formatDateTime(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

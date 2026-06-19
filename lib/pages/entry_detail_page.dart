@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/entry.dart';
 import '../models/entry_template.dart';
 import '../database/app_database.dart';
+import '../services/photo_service.dart';
 import '../utils/text_formatter.dart';
 import 'entry_editor_page.dart';
 
@@ -276,7 +278,84 @@ class EntryDetailPage extends StatelessWidget {
               ),
             ),
 
-            // ---- 卡片 5：后续待办 ----
+            // ---- 卡片 5：照片 ----
+            if (entry.photoFilenames.isNotEmpty)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.photo_outlined,
+                              size: 16, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '照片（${entry.photoFilenames.length}）',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 120,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: entry.photoFilenames.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final fileName = entry.photoFilenames[index];
+                            return FutureBuilder<String?>(
+                              future: PhotoService().getPhotoPath(fileName),
+                              builder: (context, snapshot) {
+                                final path = snapshot.data;
+                                if (path == null) {
+                                  return Container(
+                                    width: 120,
+                                    height: 120,
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Center(
+                                      child: SizedBox(
+                                        width: 20, height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return GestureDetector(
+                                  onTap: () => _showPhotoFullscreen(context, path),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.file(
+                                      File(path),
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // ---- 卡片 6：后续待办 ----
             if (entry.followUp != null && entry.followUp!.isNotEmpty)
               Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -312,6 +391,33 @@ class EntryDetailPage extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 全屏显示照片
+  void _showPhotoFullscreen(BuildContext context, String path) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.file(
+                File(path),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
         ),
       ),
     );

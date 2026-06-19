@@ -15,6 +15,7 @@ import '../models/space.dart';
 import '../models/entry_template.dart';
 import '../models/checkin_item.dart';
 import '../models/checkin_record.dart';
+import '../services/photo_service.dart';
 import 'web_database.dart';
 
 /// 本地数据库管理类 v3
@@ -88,7 +89,8 @@ class AppDatabase {
         project_id INTEGER,
         space_id INTEGER NOT NULL DEFAULT 1,
         contact_person TEXT,
-        follow_up TEXT
+        follow_up TEXT,
+        photo_filenames TEXT
       )
     ''');
     await db.execute('''
@@ -186,7 +188,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -239,7 +241,7 @@ class AppDatabase {
       )
     ''');
 
-    // 记录表（含 title、space_id、contact_person、follow_up）
+    // 记录表（含 title、space_id、contact_person、follow_up、photo_filenames）
     await db.execute('''
       CREATE TABLE entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -251,6 +253,7 @@ class AppDatabase {
         space_id INTEGER NOT NULL DEFAULT 1,
         contact_person TEXT,
         follow_up TEXT,
+        photo_filenames TEXT,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
       )
     ''');
@@ -575,6 +578,11 @@ class AppDatabase {
       try { await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_item ON checkin_records(item_id)'); } catch (_) {}
       try { await db.execute('CREATE INDEX IF NOT EXISTS idx_checkin_records_date ON checkin_records(checkin_date)'); } catch (_) {}
     }
+
+    // v9 → v10：增加 photo_filenames 列
+    if (oldVersion < 10) {
+      try { await db.execute('ALTER TABLE entries ADD COLUMN photo_filenames TEXT'); } catch (_) {}
+    }
   }
 
   // ==================== 设置持久化 ====================
@@ -720,10 +728,99 @@ class AppDatabase {
   }
 
   /// 移动标签到新父节点（parentId = null 表示移到根）
+  /// 同时同步更新已有记录的关联标签
   Future<void> moveTag(int tagId, int? newParentId) async {
     final db = await database;
+    final oldParentId = (await db.query('tags',
+        columns: ['parent_id'], where: 'id = ?', whereArgs: [tagId]))
+        .firstOrNull?['parent_id'] as int?;
+
     await db.update('tags', {'parent_id': newParentId},
         where: 'id = ?', whereArgs: [tagId]);
+
+    // 同步更新已有记录的标签关联
+    await _syncEntryTagsAfterMove(tagId, oldParentId, newParentId);
+  }
+
+  /// 移动标签后，同步更新已有记录的 ancestor 关联
+  Future<void> _syncEntryTagsAfterMove(int tagId, int? oldParentId, int? newParentId) async {
+    final db = await database;
+
+    // 1. 收集所有受影响的标签（被移动的标签及其所有子标签）
+    final affectedTagIds = <int>{};
+    await _collectDescendantIds(tagId, affectedTagIds);
+    affectedTagIds.add(tagId);
+
+    // 2. 找出所有关联了这些标签的记录
+    final ph = affectedTagIds.map((_) => '?').join(',');
+    final entryMaps = await db.rawQuery(
+      'SELECT DISTINCT entry_id FROM entry_tags WHERE tag_id IN ($ph)',
+      affectedTagIds.toList(),
+    );
+    final entryIds = entryMaps.map((m) => m['entry_id'] as int).toList();
+    if (entryIds.isEmpty) return;
+
+    // 3. 获取全部标签的 parent_id 映射（用于重建祖先链）
+    final allTags = await db.query('tags');
+    final parentMap = <int, int?>{};
+    for (final t in allTags) {
+      parentMap[t['id'] as int] = t['parent_id'] as int?;
+    }
+
+    // 4. 对每条记录重建标签关联
+    for (final entryId in entryIds) {
+      // 获取该记录当前关联的所有 tag_id
+      final etMaps = await db.query('entry_tags',
+          where: 'entry_id = ?', whereArgs: [entryId]);
+      final currentTagIds = etMaps.map((m) => m['tag_id'] as int).toSet();
+
+      // 重建：用每个叶标签重新计算完整祖先链
+      Set<int> newTagIds = {};
+      for (final tId in currentTagIds) {
+        // 如果这个标签没有被移动影响，保持原样
+        if (!affectedTagIds.contains(tId)) {
+          newTagIds.add(tId);
+        } else {
+          // 如果是受影响的标签，用新祖先链重新计算
+          newTagIds.addAll(_getFullAncestorChain(tId, parentMap));
+        }
+      }
+
+      // 更新 entry_tags
+      await db.delete('entry_tags', where: 'entry_id = ?', whereArgs: [entryId]);
+      if (newTagIds.isNotEmpty) {
+        final batch = db.batch();
+        for (final newId in newTagIds) {
+          batch.insert('entry_tags',
+              {'entry_id': entryId, 'tag_id': newId},
+              conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+        await batch.commit(noResult: true);
+      }
+    }
+  }
+
+  /// 获取标签及其路径上所有祖先的 ID 集合
+  Set<int> _getFullAncestorChain(int tagId, Map<int, int?> parentMap) {
+    final result = <int>{tagId};
+    int? current = parentMap[tagId];
+    while (current != null) {
+      result.add(current);
+      current = parentMap[current];
+    }
+    return result;
+  }
+
+  /// 递归收集所有子标签 ID
+  Future<void> _collectDescendantIds(int parentId, Set<int> result) async {
+    final db = await database;
+    final children = await db.query('tags',
+        columns: ['id'], where: 'parent_id = ?', whereArgs: [parentId]);
+    for (final child in children) {
+      final id = child['id'] as int;
+      result.add(id);
+      await _collectDescendantIds(id, result);
+    }
   }
 
   /// 删除标签（级联删除子标签和关联）
@@ -1167,7 +1264,7 @@ class AppDatabase {
     return streak;
   }
 
-  /// 新增记录（含标签、属性标签、项目关联）
+  /// 新增记录（含标签、属性标签、项目关联、照片）
   Future<Entry> createEntry(String content,
       {String? title,
       List<int>? tagIds,
@@ -1176,7 +1273,8 @@ class AppDatabase {
       int? spaceId,
       DateTime? createdAt,
       String? contactPerson,
-      String? followUp}) async {
+      String? followUp,
+      List<String>? photoFilenames}) async {
     final db = await database;
     final now = createdAt ?? DateTime.now();
     final entry = Entry(
@@ -1188,6 +1286,7 @@ class AppDatabase {
       spaceId: spaceId ?? 1,
       contactPerson: contactPerson,
       followUp: followUp,
+      photoFilenames: photoFilenames,
     );
 
     final id = await db.insert('entries', entry.toMap());
@@ -1585,19 +1684,46 @@ class AppDatabase {
     return entry;
   }
 
-  /// 删除记录
+  /// 删除记录（同时删除关联照片文件）
   Future<void> deleteEntry(int entryId) async {
     final db = await database;
+    // 先获取照片文件名以便删除文件
+    final entryMaps = await db.query('entries',
+        columns: ['photo_filenames'], where: 'id = ?', whereArgs: [entryId]);
+    if (entryMaps.isNotEmpty) {
+      final raw = entryMaps.first['photo_filenames'] as String?;
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final names = (const JsonDecoder().convert(raw) as List<dynamic>)
+              .map((e) => e.toString()).toList();
+          await PhotoService().deletePhotos(names);
+        } catch (_) {}
+      }
+    }
     await db.delete('entry_tags', where: 'entry_id = ?', whereArgs: [entryId]);
     await db.delete('entry_attribute_tags', where: 'entry_id = ?', whereArgs: [entryId]);
     await db.delete('entries', where: 'id = ?', whereArgs: [entryId]);
   }
 
-  /// 批量删除记录
+  /// 批量删除记录（同时删除关联照片文件）
   Future<void> deleteEntries(List<int> entryIds) async {
     if (entryIds.isEmpty) return;
     final db = await database;
     final placeholders = entryIds.map((_) => '?').join(',');
+    // 先获取照片文件名以便删除文件
+    final entryMaps = await db.query('entries',
+        columns: ['photo_filenames'],
+        where: 'id IN ($placeholders)', whereArgs: entryIds);
+    for (final m in entryMaps) {
+      final raw = m['photo_filenames'] as String?;
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final names = (const JsonDecoder().convert(raw) as List<dynamic>)
+              .map((e) => e.toString()).toList();
+          await PhotoService().deletePhotos(names);
+        } catch (_) {}
+      }
+    }
     await db.delete('entry_tags',
         where: 'entry_id IN ($placeholders)', whereArgs: entryIds);
     await db.delete('entry_attribute_tags',
@@ -1606,7 +1732,7 @@ class AppDatabase {
         where: 'id IN ($placeholders)', whereArgs: entryIds);
   }
 
-  /// 更新记录内容、标签、项目、属性标签、对接人、后续待办
+  /// 更新记录内容、标签、项目、属性标签、对接人、后续待办、照片
   Future<void> updateEntryWithTags(int entryId, String content,
       {String? title,
       List<int>? tagIds,
@@ -1614,7 +1740,8 @@ class AppDatabase {
       int? projectId,
       DateTime? createdAt,
       String? contactPerson,
-      String? followUp}) async {
+      String? followUp,
+      List<String>? photoFilenames}) async {
     final db = await database;
 
     final updateData = <String, dynamic>{
@@ -1627,6 +1754,11 @@ class AppDatabase {
     };
     if (createdAt != null) {
       updateData['created_at'] = createdAt.toIso8601String();
+    }
+    if (photoFilenames != null) {
+      updateData['photo_filenames'] = photoFilenames.isNotEmpty
+          ? const JsonEncoder().convert(photoFilenames)
+          : null;
     }
 
     await db.update(
@@ -2315,6 +2447,18 @@ class AppDatabase {
   /// 获取记录及标签路径（用于 Excel 导出）
   Future<List<Map<String, dynamic>>> getAllEntriesWithTagPaths({int? spaceId}) async {
     final entries = await getAllEntries(spaceId: spaceId);
+    return _enrichToTagPaths(entries);
+  }
+
+  /// 按日期范围获取记录及标签路径（用于 Excel 导出）
+  Future<List<Map<String, dynamic>>> getEntriesWithTagPathsByDateRange(
+      DateTime start, DateTime end, {int? spaceId}) async {
+    final entries = await getEntriesByDateRange(start, end, spaceId: spaceId);
+    return _enrichToTagPaths(entries);
+  }
+
+  /// 将记录列表转换为含标签路径的导出格式
+  Future<List<Map<String, dynamic>>> _enrichToTagPaths(List<Entry> entries) async {
     final result = <Map<String, dynamic>>[];
 
     for (final entry in entries) {
@@ -2334,6 +2478,7 @@ class AppDatabase {
         'attribute_tags': entry.attributeTags.map((at) => at.name).toList(),
         'contact_person': entry.contactPerson ?? '',
         'follow_up': entry.followUp ?? '',
+        'photo_filenames': entry.photoFilenames,
       });
     }
 

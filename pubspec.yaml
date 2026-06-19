@@ -21,6 +21,9 @@ dependencies:
   local_auth: ^2.3.0
   xml: ^6.5.0
   sqflite_common_ffi: ^2.3.6
+  image_picker: ^1.0.0
+  image: ^4.0.0
+  archive: ^3.4.0
 
 dev_dependencies:
   flutter_test:

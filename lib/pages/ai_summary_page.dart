@@ -37,29 +37,66 @@ class _AISummaryPageState extends State<AISummaryPage> {
   }
 
   Future<void> _pickDateRange() async {
-    final from = await showDatePicker(
+    final choice = await showModalBottomSheet<String>(
       context: context,
-      initialDate: _startDate ?? DateTime.now().subtract(const Duration(days: 7)),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      helpText: '选择起始日期',
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('选择单日'),
+              onTap: () => Navigator.pop(ctx, 'day'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.date_range),
+              title: const Text('选择时段'),
+              onTap: () => Navigator.pop(ctx, 'range'),
+            ),
+          ],
+        ),
+      ),
     );
-    if (from == null || !mounted) return;
+    if (choice == null || !mounted) return;
 
-    final to = await showDatePicker(
-      context: context,
-      initialDate: _endDate ?? DateTime.now(),
-      firstDate: from,
-      lastDate: DateTime.now(),
-      helpText: '选择结束日期',
-    );
-    if (to == null || !mounted) return;
+    if (choice == 'day') {
+      final day = await showDatePicker(
+        context: context,
+        initialDate: _startDate ?? DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime.now(),
+        helpText: '选择日期',
+      );
+      if (day == null || !mounted) return;
+      setState(() {
+        _startDate = DateTime(day.year, day.month, day.day);
+        _endDate = DateTime(day.year, day.month, day.day, 23, 59, 59);
+        _summary = null;
+      });
+    } else {
+      final from = await showDatePicker(
+        context: context,
+        initialDate: _startDate ?? DateTime.now().subtract(const Duration(days: 7)),
+        firstDate: DateTime(2020),
+        lastDate: DateTime.now(),
+        helpText: '选择起始日期',
+      );
+      if (from == null || !mounted) return;
 
-    setState(() {
-      _startDate = from;
-      _endDate = to;
-      _summary = null;
-    });
+      final to = await showDatePicker(
+        context: context,
+        initialDate: _endDate ?? DateTime.now(),
+        firstDate: from,
+        lastDate: DateTime.now(),
+        helpText: '选择结束日期',
+      );
+      if (to == null || !mounted) return;
+      setState(() {
+        _startDate = from;
+        _endDate = to;
+        _summary = null;
+      });
+    }
     _loadEntries();
   }
 

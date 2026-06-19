@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/tag.dart';
@@ -10,6 +11,7 @@ import '../models/entry_template.dart';
 import '../database/app_database.dart';
 import '../services/undo_manager.dart';
 import '../services/ai_service.dart';
+import '../services/photo_service.dart';
 import '../utils/text_formatter.dart';
 
 /// 新增/编辑记录页面
@@ -80,6 +82,9 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   String _contactPerson = '';
   String _followUp = '';
 
+  // 照片
+  List<String> _photoFilenames = [];
+
   // 标记初始标签是否已加载（编辑模式专用）
   bool _initialTagsLoaded = false;
 
@@ -121,6 +126,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
       _contactPersonController.text = _contactPerson;
       _followUp = widget.entry!.followUp ?? '';
       _followUpController.text = _followUp;
+      _photoFilenames = List.from(widget.entry!.photoFilenames);
       // 从已有树状标签中找出最深的那个作为叶标签
       // 属性标签
       _selectedAttributeTagIds =
@@ -513,6 +519,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           createdAt: _createdAt,
           contactPerson: cp.isNotEmpty ? cp : null,
           followUp: fu.isNotEmpty ? fu : null,
+          photoFilenames: _photoFilenames.isNotEmpty ? _photoFilenames : null,
         );
       } else {
         await _db.createEntry(
@@ -525,6 +532,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
           createdAt: _createdAt,
           contactPerson: cp.isNotEmpty ? cp : null,
           followUp: fu.isNotEmpty ? fu : null,
+          photoFilenames: _photoFilenames.isNotEmpty ? _photoFilenames : null,
         );
       }
       if (mounted) {
@@ -737,11 +745,67 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
     return _buildPage(theme);
   }
 
+  /// 选择照片（拍照或从相册选择）
+  Future<void> _pickPhotos() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('拍照'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('从相册选择多张'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    List<String> newFiles = [];
+    if (choice == 'camera') {
+      final file = await PhotoService().takePhoto();
+      if (file != null) newFiles = [file];
+    } else if (choice == 'gallery') {
+      newFiles = await PhotoService().pickImagesFromGallery();
+    }
+
+    if (newFiles.isNotEmpty) {
+      setState(() {
+        _photoFilenames.addAll(newFiles);
+      });
+    }
+  }
+
+  /// 移除一张照片
+  void _removePhoto(String fileName) {
+    setState(() {
+      _photoFilenames.remove(fileName);
+    });
+  }
+
   Widget _buildPage(ThemeData theme) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditMode ? '编辑记录' : '新记录'),
         actions: [
+          if (!_isEditMode)
+            IconButton(
+              icon: const Icon(Icons.bookmark_outline, size: 20),
+              tooltip: '从模板导入',
+              onPressed: _saving ? null : _pickTemplate,
+            ),
+          IconButton(
+            icon: const Icon(Icons.bookmark_add_outlined, size: 20),
+            tooltip: '另存为模板',
+            onPressed: _saving ? null : _saveAsTemplate,
+          ),
           _saving
               ? const SizedBox(
                   width: 20,
@@ -798,6 +862,17 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                       fontSize: 17, fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
+                if (!_isEditMode)
+                  IconButton(
+                    icon: const Icon(Icons.bookmark_outline, size: 20),
+                    tooltip: '从模板导入',
+                    onPressed: _saving ? null : _pickTemplate,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 20),
+                  tooltip: '另存为模板',
+                  onPressed: _saving ? null : _saveAsTemplate,
+                ),
                 _saving
                     ? const SizedBox(
                         width: 20,
@@ -827,42 +902,38 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
   List<Widget> _buildFormSections(ThemeData theme) {
     final path = _selectedTagPath;
     return [
-      // ---- 从模板导入 ----
-      if (!_isEditMode)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            onTap: _pickTemplate,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer
-                    .withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+      // ---- 记录时间（最前面） ----
+      InkWell(
+        onTap: _openTimePicker,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.access_time,
+                  size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _formatEditorDateTime(_createdAt),
+                  style: const TextStyle(fontSize: 14),
+                ),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.bookmark_outline,
-                      size: 16, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text('从模板导入',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      )),
-                  const Spacer(),
-                  Icon(Icons.chevron_right,
-                      size: 18, color: theme.colorScheme.primary),
-                ],
-              ),
-            ),
+              Icon(Icons.edit_outlined,
+                  size: 14, color: theme.colorScheme.onSurfaceVariant),
+            ],
           ),
         ),
+      ),
+
+      const SizedBox(height: 16),
 
       // ---- 事项简介（点按弹出输入框） ----
       InkWell(
@@ -934,123 +1005,6 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
               ),
               Icon(Icons.edit_outlined,
                   size: 16, color: theme.colorScheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-
-      const SizedBox(height: 16),
-
-      // ---- 对接人 ----
-      Row(
-        children: [
-          Icon(Icons.person_outline,
-              size: 14, color: theme.colorScheme.primary),
-          const SizedBox(width: 6),
-          Text('对接人',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurfaceVariant,
-              )),
-        ],
-      ),
-      const SizedBox(height: 6),
-      _buildTextField(
-        label: '对接人',
-        icon: Icons.person_outline,
-        value: _contactPerson,
-        hint: '如：张三',
-        onChanged: (v) => setState(() => _contactPerson = v),
-      ),
-      const SizedBox(height: 16),
-
-      // ---- 后续待办 ----
-      Row(
-        children: [
-          Icon(Icons.checklist_outlined,
-              size: 14, color: theme.colorScheme.primary),
-          const SizedBox(width: 6),
-          Text('后续待办',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurfaceVariant,
-              )),
-        ],
-      ),
-      const SizedBox(height: 6),
-      _buildTextField(
-        label: '后续待办',
-        icon: Icons.checklist_outlined,
-        value: _followUp,
-        hint: '如：下周五前回复邮件',
-        onChanged: (v) => setState(() => _followUp = v),
-      ),
-
-      const SizedBox(height: 16),
-
-      // ---- 另存为模板 ----
-      InkWell(
-        onTap: _saveAsTemplate,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_add_outlined,
-                  size: 16, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Text('另存为模板',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  )),
-              const Spacer(),
-              Icon(Icons.chevron_right,
-                  size: 18, color: theme.colorScheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-
-      const SizedBox(height: 16),
-      const Divider(),
-      const SizedBox(height: 12),
-
-      // ---- 记录时间 ----
-      InkWell(
-        onTap: _openTimePicker,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.access_time,
-                  size: 16, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _formatEditorDateTime(_createdAt),
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ),
-              Icon(Icons.edit_outlined,
-                  size: 14, color: theme.colorScheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -1221,7 +1175,169 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
         ),
       ),
 
-      const SizedBox(height: 40),
+      const SizedBox(height: 16),
+
+      // ---- 照片选择 ----
+      _SectionHeader(
+        icon: Icons.photo_outlined,
+        label: '照片（${_photoFilenames.length}）',
+        onAdd: _pickPhotos,
+      ),
+      const SizedBox(height: 8),
+      if (_photoFilenames.isNotEmpty)
+        SizedBox(
+          height: 80,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _photoFilenames.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              if (index == _photoFilenames.length) {
+                return SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: OutlinedButton(
+                    onPressed: _pickPhotos,
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Icon(Icons.add, size: 24),
+                  ),
+                );
+              }
+              final fileName = _photoFilenames[index];
+              return FutureBuilder<String?>(
+                future: PhotoService().getPhotoPath(fileName),
+                builder: (context, snapshot) {
+                  final path = snapshot.data;
+                  return Stack(
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          image: path != null
+                              ? DecorationImage(
+                                  image: FileImage(File(path)),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: path == null
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
+                      ),
+                      Positioned(
+                        top: 2, right: 2,
+                        child: GestureDetector(
+                          onTap: () => _removePhoto(fileName),
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close, size: 14, color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        )
+      else
+        InkWell(
+          onTap: _pickPhotos,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.add_a_photo,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Text('添加照片',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )),
+              ],
+            ),
+          ),
+        ),
+
+      const SizedBox(height: 16),
+
+      // ---- 对接人 ----
+      Row(
+        children: [
+          Icon(Icons.person_outline,
+              size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text('对接人',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+        ],
+      ),
+      const SizedBox(height: 6),
+      _buildTextField(
+        label: '对接人',
+        icon: Icons.person_outline,
+        value: _contactPerson,
+        hint: '如：张三',
+        onChanged: (v) => setState(() => _contactPerson = v),
+      ),
+      const SizedBox(height: 16),
+
+      // ---- 后续待办 ----
+      Row(
+        children: [
+          Icon(Icons.checklist_outlined,
+              size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text('后续待办',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+        ],
+      ),
+      const SizedBox(height: 6),
+      _buildTextField(
+        label: '后续待办',
+        icon: Icons.checklist_outlined,
+        value: _followUp,
+        hint: '如：下周五前回复邮件',
+        onChanged: (v) => setState(() => _followUp = v),
+      ),
+
+      const SizedBox(height: 16),
     ];
   }
 
