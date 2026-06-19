@@ -837,7 +837,7 @@ class _HomePageState extends State<HomePage> {
                 value: 'sync',
                 child: ListTile(
                   leading: Icon(Icons.cloud_sync_outlined),
-                  title: Text('坚果云同步'),
+                  title: Text('网络同步'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
