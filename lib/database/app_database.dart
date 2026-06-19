@@ -743,7 +743,7 @@ class AppDatabase {
   }
 
   /// 重建所有记录的标签关联（修复旧数据中残留的错误祖先标签）
-  /// 策略：找出每条记录的叶标签，用当前的祖先链重建
+  /// 策略：找出每条记录中最深的标签作为叶标签，用当前的祖先链重建
   Future<int> rebuildAllEntryTags() async {
     final db = await database;
 
@@ -766,24 +766,21 @@ class AppDatabase {
       final currentTagIds = etMaps.map((m) => m['tag_id'] as int).toSet();
       if (currentTagIds.isEmpty) continue;
 
-      // 找叶标签（没有任何子标签也在当前集合中的标签）
-      final leafTagIds = <int>{};
+      // 找出最深的叶标签
+      int? deepestTagId;
+      int maxDepth = -1;
       for (final tId in currentTagIds) {
-        bool hasChild = false;
-        for (final otherId in currentTagIds) {
-          if (otherId != tId && parentMap[otherId] == tId) {
-            hasChild = true;
-            break;
-          }
+        final depth = _computeDepth(tId, parentMap);
+        if (depth > maxDepth) {
+          maxDepth = depth;
+          deepestTagId = tId;
         }
-        if (!hasChild) leafTagIds.add(tId);
       }
 
-      // 重新计算正确的标签集合
-      final correctTagIds = <int>{};
-      for (final leafId in leafTagIds) {
-        correctTagIds.addAll(_getFullAncestorChain(leafId, parentMap));
-      }
+      // 用最深的叶标签重新计算完整祖先链
+      final correctTagIds = deepestTagId != null
+          ? _getFullAncestorChain(deepestTagId, parentMap)
+          : currentTagIds;
 
       // 检查是否需要更新（有差异才写库）
       if (currentTagIds.length != correctTagIds.length ||
@@ -804,7 +801,8 @@ class AppDatabase {
   }
 
   /// 移动标签后，同步更新已有记录的 ancestor 关联
-  /// 策略：找出每条记录的叶标签，用新的祖先链重建关联（丢弃旧祖先）
+  /// 策略：对于每条关联了被移动标签的记录，找出当前关联中最深的标签
+  /// 作为叶标签，用它重新计算完整祖先链（旧的祖先会被自然丢弃）
   Future<void> _syncEntryTagsAfterMove(int tagId, int? oldParentId, int? newParentId) async {
     final db = await database;
 
@@ -822,7 +820,7 @@ class AppDatabase {
     final entryIds = entryMaps.map((m) => m['entry_id'] as int).toList();
     if (entryIds.isEmpty) return;
 
-    // 3. 获取全部标签的 parent_id 映射（用于重建祖先链）
+    // 3. 获取全部标签的 parent_id 映射
     final allTags = await db.query('tags');
     final parentMap = <int, int?>{};
     for (final t in allTags) {
@@ -831,33 +829,26 @@ class AppDatabase {
 
     // 4. 对每条记录重建标签关联
     for (final entryId in entryIds) {
-      // 获取该记录当前关联的所有 tag_id
       final etMaps = await db.query('entry_tags',
           where: 'entry_id = ?', whereArgs: [entryId]);
       final currentTagIds = etMaps.map((m) => m['tag_id'] as int).toSet();
       if (currentTagIds.isEmpty) continue;
 
-      // 找出叶标签（在 currentTagIds 中没有任何子标签也在 currentTagIds 中的标签）
-      final leafTagIds = <int>{};
+      // 找出关联中最深的叶标签（depth 最大的那个）
+      int? deepestTagId;
+      int maxDepth = -1;
       for (final tId in currentTagIds) {
-        // 检查 currentTagIds 中是否有标签的 parentId 是 tId
-        bool hasChild = false;
-        for (final otherId in currentTagIds) {
-          if (otherId != tId && parentMap[otherId] == tId) {
-            hasChild = true;
-            break;
-          }
-        }
-        if (!hasChild) {
-          leafTagIds.add(tId);
+        final depth = _computeDepth(tId, parentMap);
+        if (depth > maxDepth) {
+          maxDepth = depth;
+          deepestTagId = tId;
         }
       }
 
-      // 用每个叶标签重新计算完整祖先链（这样旧的祖先会被自然丢弃）
-      final newTagIds = <int>{};
-      for (final leafId in leafTagIds) {
-        newTagIds.addAll(_getFullAncestorChain(leafId, parentMap));
-      }
+      // 用最深的叶标签重新计算完整祖先链
+      final newTagIds = deepestTagId != null
+          ? _getFullAncestorChain(deepestTagId, parentMap)
+          : currentTagIds;
 
       // 更新 entry_tags
       await db.delete('entry_tags', where: 'entry_id = ?', whereArgs: [entryId]);
@@ -871,6 +862,17 @@ class AppDatabase {
         await batch.commit(noResult: true);
       }
     }
+  }
+
+  /// 计算标签在当前树中的深度
+  int _computeDepth(int tagId, Map<int, int?> parentMap) {
+    int depth = 0;
+    int? current = parentMap[tagId];
+    while (current != null) {
+      depth++;
+      current = parentMap[current];
+    }
+    return depth;
   }
 
   /// 获取标签及其路径上所有祖先的 ID 集合
