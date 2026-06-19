@@ -742,7 +742,69 @@ class AppDatabase {
     await _syncEntryTagsAfterMove(tagId, oldParentId, newParentId);
   }
 
+  /// 重建所有记录的标签关联（修复旧数据中残留的错误祖先标签）
+  /// 策略：找出每条记录的叶标签，用当前的祖先链重建
+  Future<int> rebuildAllEntryTags() async {
+    final db = await database;
+
+    // 获取所有标签的 parent_id 映射
+    final allTags = await db.query('tags');
+    final parentMap = <int, int?>{};
+    for (final t in allTags) {
+      parentMap[t['id'] as int] = t['parent_id'] as int?;
+    }
+
+    // 获取所有有标签关联的记录
+    final entryMaps = await db.rawQuery(
+        'SELECT DISTINCT entry_id FROM entry_tags');
+    final entryIds = entryMaps.map((m) => m['entry_id'] as int).toList();
+
+    int fixedCount = 0;
+    for (final entryId in entryIds) {
+      final etMaps = await db.query('entry_tags',
+          where: 'entry_id = ?', whereArgs: [entryId]);
+      final currentTagIds = etMaps.map((m) => m['tag_id'] as int).toSet();
+      if (currentTagIds.isEmpty) continue;
+
+      // 找叶标签（没有任何子标签也在当前集合中的标签）
+      final leafTagIds = <int>{};
+      for (final tId in currentTagIds) {
+        bool hasChild = false;
+        for (final otherId in currentTagIds) {
+          if (otherId != tId && parentMap[otherId] == tId) {
+            hasChild = true;
+            break;
+          }
+        }
+        if (!hasChild) leafTagIds.add(tId);
+      }
+
+      // 重新计算正确的标签集合
+      final correctTagIds = <int>{};
+      for (final leafId in leafTagIds) {
+        correctTagIds.addAll(_getFullAncestorChain(leafId, parentMap));
+      }
+
+      // 检查是否需要更新（有差异才写库）
+      if (currentTagIds.length != correctTagIds.length ||
+          !currentTagIds.containsAll(correctTagIds)) {
+        await db.delete('entry_tags', where: 'entry_id = ?', whereArgs: [entryId]);
+        final batch = db.batch();
+        for (final newId in correctTagIds) {
+          batch.insert('entry_tags',
+              {'entry_id': entryId, 'tag_id': newId},
+              conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+        await batch.commit(noResult: true);
+        fixedCount++;
+      }
+    }
+
+    return fixedCount;
+  }
+
   /// 移动标签后，同步更新已有记录的 ancestor 关联
+  /// 策略：找出每条记录的叶标签，用新的祖先链重建关联（丢弃旧祖先）
   Future<void> _syncEntryTagsAfterMove(int tagId, int? oldParentId, int? newParentId) async {
     final db = await database;
 
@@ -773,17 +835,28 @@ class AppDatabase {
       final etMaps = await db.query('entry_tags',
           where: 'entry_id = ?', whereArgs: [entryId]);
       final currentTagIds = etMaps.map((m) => m['tag_id'] as int).toSet();
+      if (currentTagIds.isEmpty) continue;
 
-      // 重建：用每个叶标签重新计算完整祖先链
-      Set<int> newTagIds = {};
+      // 找出叶标签（在 currentTagIds 中没有任何子标签也在 currentTagIds 中的标签）
+      final leafTagIds = <int>{};
       for (final tId in currentTagIds) {
-        // 如果这个标签没有被移动影响，保持原样
-        if (!affectedTagIds.contains(tId)) {
-          newTagIds.add(tId);
-        } else {
-          // 如果是受影响的标签，用新祖先链重新计算
-          newTagIds.addAll(_getFullAncestorChain(tId, parentMap));
+        // 检查 currentTagIds 中是否有标签的 parentId 是 tId
+        bool hasChild = false;
+        for (final otherId in currentTagIds) {
+          if (otherId != tId && parentMap[otherId] == tId) {
+            hasChild = true;
+            break;
+          }
         }
+        if (!hasChild) {
+          leafTagIds.add(tId);
+        }
+      }
+
+      // 用每个叶标签重新计算完整祖先链（这样旧的祖先会被自然丢弃）
+      final newTagIds = <int>{};
+      for (final leafId in leafTagIds) {
+        newTagIds.addAll(_getFullAncestorChain(leafId, parentMap));
       }
 
       // 更新 entry_tags

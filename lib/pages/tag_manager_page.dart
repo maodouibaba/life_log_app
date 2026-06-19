@@ -184,6 +184,44 @@ class _TagManagerPageState extends State<TagManagerPage> {
     }
   }
 
+  /// 修复历史记录中残留的错误祖先标签关联
+  Future<void> _rebuildEntryTags() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('修复历史记录'),
+        content: const Text(
+          '将检查所有记录的标签关联，按当前的标签树结构重建祖先链。\n\n'
+          '适用于：曾经移动过标签层级，但部分历史记录仍带着旧的祖先标签。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('开始修复'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final count = await _db.rebuildAllEntryTags();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(count > 0 ? '✅ 已修复 $count 条记录' : '✅ 所有记录都正确，无需修复')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('修复失败：$e')),
+      );
+    }
+  }
+
   /// 拖拽排序：重新编号同级标签（parentId = null 表示根标签）
   Future<void> _reorderChildrenOf(int? parentId,
       int oldIndex, int newIndex) async {
@@ -229,6 +267,24 @@ class _TagManagerPageState extends State<TagManagerPage> {
             icon: const Icon(Icons.add),
             tooltip: '新建根标签',
             onPressed: () => _addTag(),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (v) {
+              if (v == 'rebuild') _rebuildEntryTags();
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'rebuild',
+                child: ListTile(
+                  leading: Icon(Icons.auto_fix_high, size: 20),
+                  title: Text('修复历史记录的标签关联'),
+                  subtitle: Text('清理旧的错误祖先', style: TextStyle(fontSize: 11)),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
           ),
         ],
       ),
