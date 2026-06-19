@@ -205,32 +205,47 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   }
 
   Future<void> _importFromFile(String filePath) async {
-    final confirm = await showDialog<bool>(
+    final restoreType = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('恢复备份'),
-        content: const Text(
-            '恢复备份将清空所有现有数据并替换为备份内容，此操作不可撤销。\n\n确定继续吗？'),
+        content: Text('选择恢复方式：\n${filePath.split(Platform.pathSeparator).last}'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx, 'merge'),
+            child: const Text('合并导入'),
+          ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('确定恢复',
-                style:
-                    TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            onPressed: () => Navigator.pop(ctx, 'replace'),
+            child: Text('全量替换',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
           ),
         ],
       ),
     );
 
-    if (confirm != true || !mounted) return;
+    if (restoreType == null || !mounted) return;
 
     setState(() => _importing = true);
     try {
       final jsonText = await File(filePath).readAsString();
-      await _db.importFromJson(jsonText);
+      if (restoreType == 'replace') {
+        await _db.importFromJson(jsonText);
+      } else {
+        final result = await _db.mergeFromJson(jsonText);
+        setState(() => _importing = false);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条'),
+          ),
+        );
+        return;
+      }
       setState(() => _importing = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -151,24 +151,27 @@ class _WebDavTabState extends State<_WebDavTab> {
   }
 
   Future<void> _downloadAndRestore(RemoteFile file) async {
-    final confirm = await showDialog<bool>(
+    final restoreType = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('恢复备份'),
-        content: Text('确定要恢复「${file.name}」吗？\n\n⚠️ 恢复会替换本地所有数据，不可撤销！'),
+        content: Text('选择恢复方式：\n「${file.name}」'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx, 'merge'),
+            child: const Text('合并导入')),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('恢复',
+            onPressed: () => Navigator.pop(ctx, 'replace'),
+            child: Text('全量替换',
                 style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消')),
         ],
       ),
     );
-    if (confirm != true || !mounted) return;
+    if (restoreType == null || !mounted) return;
 
     _setStatus('正在下载...');
     try {
@@ -178,8 +181,13 @@ class _WebDavTabState extends State<_WebDavTab> {
         return;
       }
       final db = AppDatabase();
-      await db.importFromJson(json);
-      _setStatus('✅ 恢复完成');
+      if (restoreType == 'replace') {
+        await db.importFromJson(json);
+        _setStatus('✅ 已全量替换');
+      } else {
+        final result = await db.mergeFromJson(json);
+        _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
+      }
     } catch (e) {
       _setStatus('❌ 恢复异常：$e', isError: true);
     }
