@@ -697,6 +697,7 @@ class _HomePageState extends State<HomePage> {
                   builder: (_) => TagManagerPage(spaceId: _spaceId),
                 ),
               );
+              _loadEntries();
             },
           ),
           IconButton(
@@ -709,6 +710,7 @@ class _HomePageState extends State<HomePage> {
                   builder: (_) => AttributeTagManagerPage(spaceId: _spaceId),
                 ),
               );
+              _loadEntries();
             },
           ),
           IconButton(
@@ -734,6 +736,7 @@ class _HomePageState extends State<HomePage> {
                   builder: (_) => ProjectManagerPage(spaceId: _spaceId),
                 ),
               );
+              _loadEntries();
             },
           ),
           PopupMenuButton<String>(
@@ -749,6 +752,7 @@ class _HomePageState extends State<HomePage> {
                       builder: (_) => TemplateManagerPage(spaceId: _spaceId),
                     ),
                   );
+                  _loadEntries();
                   break;
                 case 'ai_summary':
                   if (!context.mounted) return;
@@ -778,6 +782,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(
                         builder: (_) => const SyncSettingsPage()),
                   );
+                  _loadEntries();
                   break;
                 case 'switch_space':
                   widget.onSwitchSpace();
