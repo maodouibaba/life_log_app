@@ -229,6 +229,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   /// 弹出日期时间选择器
   Future<void> _openTimePicker() async {
+    _tempDateTime = _createdAt;
     final result = await showModalBottomSheet<DateTime>(
       context: context,
       builder: (ctx) => Container(
