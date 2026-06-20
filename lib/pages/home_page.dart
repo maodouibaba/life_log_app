@@ -387,6 +387,21 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 16,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Text('以下仅用于 AI 助写（AI 总结不适用）',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          )),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   // 默认风格
                   const Text('默认写作风格',
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
