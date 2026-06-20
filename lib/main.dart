@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'pages/home_page.dart';
@@ -88,6 +89,13 @@ class _LifeLogAppState extends State<LifeLogApp> {
       darkTheme: style == 'warm'
           ? _buildWarmDarkTheme(_getPlatformFont())
           : _buildClassicDarkTheme(_getPlatformFont()),
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       themeMode: ThemeSettings().mode,
       home: LockScreen(child: const _AppEntry()),
     );
