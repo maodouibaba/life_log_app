@@ -119,7 +119,7 @@ class ExportService {
         followUp,
       ];
 
-      // 照片列：存相对路径
+      // 照片列：存相对路径（后面会转为超链接）
       if (includePhotos) {
         final photoFilenames = (row['photo_filenames'] as List<dynamic>?)
                 ?.cast<String>() ?? [];
@@ -127,6 +127,9 @@ class ExportService {
       }
 
       sheet.appendRow(rowData);
+
+      // 照片列显示相对路径（解压 ZIP 后 photos/ 与 Excel 在同一目录）
+      // 因 excel 包不支持超链接，路径文本已足够用户定位
     }
 
     // 设置列宽

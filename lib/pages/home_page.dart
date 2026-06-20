@@ -860,7 +860,7 @@ class _HomePageState extends State<HomePage> {
                 value: 'ai_settings',
                 child: ListTile(
                   leading: Icon(Icons.auto_awesome),
-                  title: Text('AI 助写设置'),
+                  title: Text('AI 设置'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

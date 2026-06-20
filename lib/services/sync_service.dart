@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
+import 'package:archive/archive_io.dart';
 import '../database/app_database.dart';
+import '../services/photo_service.dart';
 
 /// 坚果云 WebDAV 连接配置
 class SyncConfig {
@@ -186,6 +188,68 @@ class SyncService {
       final putResp = await client
           .send(putReq)
           .timeout(const Duration(seconds: 30));
+
+      if (putResp.statusCode < 200 || putResp.statusCode >= 300) {
+        throw WebDavException('上传失败', putResp.statusCode);
+      }
+
+      return fileName;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 上传 ZIP 备份文件（含照片）
+  static Future<String> uploadBackupZip(SyncConfig config) async {
+    final client = http.Client();
+    try {
+      await _ensureDir(client, config);
+
+      // 导出本地数据
+      final db = AppDatabase();
+      final jsonContent = await db.exportToJson();
+
+      // 收集照片
+      final entries = await db.getAllEntries();
+      final photoFiles = <String>{};
+      for (final e in entries) {
+        photoFiles.addAll(e.photoFilenames);
+      }
+
+      // 打包 ZIP
+      final archive = Archive();
+      final jsonBytes = utf8.encode(jsonContent);
+      archive.addFile(ArchiveFile('生活记录备份.json', jsonBytes.length, jsonBytes));
+
+      for (final fileName in photoFiles) {
+        try {
+          final photoService = PhotoService();
+          final bytes = await photoService.getPhotoBytes(fileName);
+          if (bytes != null) {
+            archive.addFile(ArchiveFile('photos/$fileName', bytes.length, bytes));
+          }
+        } catch (_) {}
+      }
+
+      final encoded = ZipEncoder().encode(archive);
+      if (encoded == null) throw Exception('ZIP 编码失败');
+
+      // 生成文件名
+      final now = DateTime.now();
+      final ts = '${now.year}${_pad2(now.month)}${_pad2(now.day)}_${_pad2(now.hour)}${_pad2(now.minute)}';
+      final fileName = '生活记录备份_$ts.zip';
+
+      // 上传
+      final fileUrl =
+          '${config.fullUrl}${Uri.encodeComponent(_dirName)}/${Uri.encodeComponent(fileName)}';
+      final putReq = http.Request('PUT', Uri.parse(fileUrl));
+      putReq.headers['Authorization'] = config.basicAuth;
+      putReq.headers['Content-Type'] = 'application/zip';
+      putReq.bodyBytes = encoded;
+
+      final putResp = await client
+          .send(putReq)
+          .timeout(const Duration(seconds: 60)); // ZIP 较大，超时加长
 
       if (putResp.statusCode < 200 || putResp.statusCode >= 300) {
         throw WebDavException('上传失败', putResp.statusCode);

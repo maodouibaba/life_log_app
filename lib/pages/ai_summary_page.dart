@@ -19,6 +19,10 @@ class AISummaryPage extends StatefulWidget {
 class _AISummaryPageState extends State<AISummaryPage> {
   final AppDatabase _db = AppDatabase();
   final _customPromptController = TextEditingController();
+  final _apiKeyController = TextEditingController();
+  final _customUrlController = TextEditingController();
+  final _customModelController = TextEditingController();
+  int _providerIndex = 0;
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -31,9 +35,32 @@ class _AISummaryPageState extends State<AISummaryPage> {
   int get _spaceId => widget.spaceId;
 
   @override
+  void initState() {
+    super.initState();
+    final s = AISettings();
+    _apiKeyController.text = s.apiKey;
+    _customUrlController.text = s.customApiUrl;
+    _customModelController.text = s.customModel;
+    _providerIndex = s.providerIndex;
+  }
+
+  @override
   void dispose() {
     _customPromptController.dispose();
+    _apiKeyController.dispose();
+    _customUrlController.dispose();
+    _customModelController.dispose();
     super.dispose();
+  }
+
+  /// 保存 AI 配置
+  void _saveAiConfig() {
+    final s = AISettings();
+    s.apiKey = _apiKeyController.text.trim();
+    s.providerIndex = _providerIndex;
+    s.customApiUrl = _customUrlController.text.trim();
+    s.customModel = _customModelController.text.trim();
+    setState(() {});
   }
 
   Future<void> _pickDateRange() async {
@@ -191,6 +218,98 @@ class _AISummaryPageState extends State<AISummaryPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ---- 如果没配 AI Key，先显示配置 ----
+          if (!AISettings().hasKey)
+            Card(
+              color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 18, color: theme.colorScheme.tertiary),
+                        const SizedBox(width: 8),
+                        const Text('配置 AI 服务',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('使用 AI 总结前，请先配置 API Key',
+                        style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant)),
+                    const SizedBox(height: 16),
+                    // 供应商选择
+                    DropdownButtonFormField<int>(
+                      value: _providerIndex >= 0 && _providerIndex < AIProvider.all.length ? _providerIndex : 0,
+                      decoration: const InputDecoration(
+                        labelText: 'AI 供应商',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: List.generate(AIProvider.all.length, (i) {
+                        final p = AIProvider.all[i];
+                        return DropdownMenuItem(value: i, child: Text(p.name));
+                      }),
+                      onChanged: (v) {
+                        if (v != null) setState(() => _providerIndex = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    // API Key
+                    TextField(
+                      controller: _apiKeyController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'API Key',
+                        hintText: '输入你的 API Key',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    // 如果选了自定义，显示自定义 URL 和模型
+                    if (_providerIndex >= 0 && _providerIndex < AIProvider.all.length &&
+                        AIProvider.all[_providerIndex].name.contains('自定义')) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _customUrlController,
+                        decoration: const InputDecoration(
+                          labelText: '自定义 API 地址',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _customModelController,
+                        decoration: const InputDecoration(
+                          labelText: '模型名称',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () {
+                          _saveAiConfig();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('✅ AI 配置已保存')),
+                          );
+                        },
+                        child: const Text('保存配置并开始使用'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // ---- 已配置时显示正常界面 ----
+          if (AISettings().hasKey) ...[
           // ---- 日期范围选择 ----
           Card(
             child: Padding(
@@ -366,6 +485,7 @@ class _AISummaryPageState extends State<AISummaryPage> {
                 ),
               ),
             ),
+          ],
         ],
       ),
     );

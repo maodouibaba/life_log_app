@@ -141,10 +141,34 @@ class _WebDavTabState extends State<_WebDavTab> {
   }
 
   Future<void> _uploadBackup() async {
+    // 先让用户选择是否包含照片
+    final includePhotos = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('上传选项'),
+        content: const Text('是否在备份中包含照片？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('仅数据（JSON）'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('包含照片（ZIP）'),
+          ),
+        ],
+      ),
+    );
+    if (includePhotos == null || !mounted) return;
+
     setState(() => _uploading = true);
     _setStatus('正在上传...');
     try {
-      await SyncService.uploadBackup(_config!);
+      if (includePhotos) {
+        await SyncService.uploadBackupZip(_config!);
+      } else {
+        await SyncService.uploadBackup(_config!);
+      }
       _setStatus('✅ 上传成功');
       _refreshFileList();
     } catch (e) {

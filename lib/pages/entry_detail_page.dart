@@ -408,10 +408,11 @@ class EntryDetailPage extends StatelessWidget {
             iconTheme: const IconThemeData(color: Colors.white),
             elevation: 0,
           ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
+          body: InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 5.0,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            child: Center(
               child: Image.file(
                 File(path),
                 fit: BoxFit.contain,
