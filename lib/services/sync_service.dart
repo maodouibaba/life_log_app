@@ -391,7 +391,7 @@ class SyncService {
       // URL 解码文件名（可能包含中文百分号编码）
       final cleanName = Uri.decodeComponent(fileName);
       if (cleanName == _dirName) continue;
-      if (!cleanName.endsWith('.json')) continue;
+      if (!cleanName.endsWith('.json') && !cleanName.endsWith('.zip')) continue;
 
       // 文件大小
       int size = 0;
