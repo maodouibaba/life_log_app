@@ -38,7 +38,7 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建入口'),
+        title: const Text('新建分区'),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -71,12 +71,12 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重命名入口'),
+        title: const Text('重命名分区'),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '入口名称',
+            hintText: '分区名称',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
@@ -102,7 +102,7 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('选择入口'),
+        title: const Text('选择分区'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -117,18 +117,18 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
                             size: 80,
                             color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
                         const SizedBox(height: 16),
-                        Text('还没有入口',
+                        Text('还没有分区',
                             style: TextStyle(fontSize: 18,
                                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         const SizedBox(height: 8),
-                        Text('创建一个入口开始记录',
+                        Text('创建一个分区开始记录',
                             style: TextStyle(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         const SizedBox(height: 24),
                         FilledButton.icon(
                           onPressed: _createSpace,
                           icon: const Icon(Icons.add),
-                          label: const Text('创建第一个入口'),
+                          label: const Text('创建第一个分区'),
                         ),
                       ],
                     ),
@@ -144,7 +144,7 @@ class _SpaceSelectorPageState extends State<SpaceSelectorPage> {
                         child: OutlinedButton.icon(
                           onPressed: _createSpace,
                           icon: const Icon(Icons.add),
-                          label: const Text('新建入口'),
+                          label: const Text('新建分区'),
                         ),
                       );
                     }

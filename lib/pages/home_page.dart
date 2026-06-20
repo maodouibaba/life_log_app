@@ -551,20 +551,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportToExcel() async {
-    // 第一步：选择导出入口
+    // 第一步：选择导出分区
     final spaces = await _db.getAllSpaces();
     int? exportSpaceId = _spaceId;
     if (spaces.length > 1) {
       final choice = await showDialog<int?>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('选择导出入口'),
+          title: const Text('选择导出分区'),
           children: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, null),
               child: const ListTile(
                 leading: Icon(Icons.select_all),
-                title: Text('全部入口'),
+                title: Text('全部分区'),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),
@@ -575,7 +575,7 @@ class _HomePageState extends State<HomePage> {
                 leading: Icon(Icons.folder_outlined),
                 title: Text(s.name),
                 subtitle: s.id == _spaceId
-                    ? const Text('当前入口', style: TextStyle(fontSize: 11))
+                    ? const Text('当前分区', style: TextStyle(fontSize: 11))
                     : null,
                 contentPadding: EdgeInsets.zero,
                 dense: true,
@@ -891,7 +891,7 @@ class _HomePageState extends State<HomePage> {
                 value: 'switch_space',
                 child: ListTile(
                   leading: Icon(Icons.swap_horiz),
-                  title: Text('切换入口'),
+                  title: Text('切换分区'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

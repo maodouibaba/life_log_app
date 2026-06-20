@@ -33,20 +33,20 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   final Set<String> _selectedPaths = {};
 
   Future<void> _export() async {
-    // 第一步：选择备份入口
+    // 第一步：选择备份分区
     final spaces = await _db.getAllSpaces();
     int? exportSpaceId;
     if (spaces.length > 1) {
       final choice = await showDialog<int?>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('选择备份入口'),
+          title: const Text('选择备份分区'),
           children: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, null),
               child: const ListTile(
                 leading: Icon(Icons.select_all),
-                title: Text('全部入口'),
+                title: Text('全部分区'),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),
