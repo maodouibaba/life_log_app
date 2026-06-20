@@ -271,7 +271,7 @@ class _WebDavTabState extends State<_WebDavTab> {
         String? jsonContent;
         for (final af in archive) {
           if (af.name.endsWith('.json')) {
-            jsonContent = String.fromCharCodes(af.content);
+            jsonContent = utf8.decode(af.content);
           } else if (af.name.startsWith('photos/') && !af.name.endsWith('/')) {
             final photoName = af.name.substring('photos/'.length);
             final photoDir = await PhotoService().getPhotoDir();
@@ -703,7 +703,7 @@ class _ICloudTabState extends State<_ICloudTab> {
           _setStatus('❌ ZIP 中未找到 JSON 备份', isError: true);
           return;
         }
-        content = String.fromCharCodes(jsonFile.content);
+        content = utf8.decode(jsonFile.content);
       } else {
         content = await File(filePath).readAsString();
       }

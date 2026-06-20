@@ -385,7 +385,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         String? jsonContent;
         for (final af in archive) {
           if (af.name.endsWith('.json')) {
-            jsonContent = String.fromCharCodes(af.content);
+            jsonContent = utf8.decode(af.content);
           } else if (af.name.startsWith('photos/') && !af.name.endsWith('/')) {
             // 提取照片到 app 的照片目录
             final photoName = af.name.substring('photos/'.length);
