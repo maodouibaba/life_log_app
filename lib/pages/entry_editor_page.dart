@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/tag.dart';
 import '../models/entry.dart';
@@ -74,6 +75,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   // 记录时间（默认当前，可手动修改）
   late DateTime _createdAt;
+  DateTime _tempDateTime = DateTime.now();
 
   // 保存状态
   bool _saving = false;
@@ -227,24 +229,46 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
 
   /// 弹出日期时间选择器
   Future<void> _openTimePicker() async {
-    final date = await showDatePicker(
+    final result = await showModalBottomSheet<DateTime>(
       context: context,
-      initialDate: _createdAt,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      builder: (ctx) => Container(
+        height: 300,
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, _tempDateTime),
+                  child: const Text('确定'),
+                ),
+              ],
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: CupertinoDatePicker(
+                initialDateTime: _createdAt,
+                mode: CupertinoDatePickerMode.dateAndTime,
+                use24hFormat: true,
+                minimumDate: DateTime(2020),
+                maximumDate: DateTime.now().add(const Duration(days: 1)),
+                onDateTimeChanged: (dt) {
+                  _tempDateTime = dt;
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-    if (date == null || !context.mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_createdAt),
-    );
-    if (time == null) return;
-    setState(() {
-      _createdAt = DateTime(
-        date.year, date.month, date.day,
-        time.hour, time.minute,
-      );
-    });
+    if (result != null) {
+      setState(() => _createdAt = result);
+    }
   }
 
   /// 弹出项目选择器（独立窗口）
