@@ -551,7 +551,47 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportToExcel() async {
-    // 第一步：选择日期方式
+    // 第一步：选择导出入口
+    final spaces = await _db.getAllSpaces();
+    int? exportSpaceId = _spaceId;
+    if (spaces.length > 1) {
+      final choice = await showDialog<int?>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('选择导出入口'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const ListTile(
+                leading: Icon(Icons.select_all),
+                title: Text('全部入口'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            ...spaces.map((s) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, s.id),
+              child: ListTile(
+                leading: Icon(Icons.folder_outlined),
+                title: Text(s.name),
+                subtitle: s.id == _spaceId
+                    ? const Text('当前入口', style: TextStyle(fontSize: 11))
+                    : null,
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            )),
+          ],
+        ),
+      );
+      if (choice is int?) {
+        exportSpaceId = choice;
+      } else if (!mounted) {
+        return;
+      }
+    }
+
+    // 第二步：选择日期方式
     final dateChoice = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -629,7 +669,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final exportService = ExportService();
       final filePath = await exportService.exportToExcel(
-        spaceId: _spaceId,
+        spaceId: exportSpaceId,
         startDate: startDate,
         endDate: endDate,
         includePhotos: photoChoice == 'yes',

@@ -32,7 +32,44 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   final Set<String> _selectedPaths = {};
 
   Future<void> _export() async {
-    // 先让用户选择是否包含照片
+    // 第一步：选择备份入口
+    final spaces = await _db.getAllSpaces();
+    int? exportSpaceId;
+    if (spaces.length > 1) {
+      final choice = await showDialog<int?>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('选择备份入口'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const ListTile(
+                leading: Icon(Icons.select_all),
+                title: Text('全部入口'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            ...spaces.map((s) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, s.id),
+              child: ListTile(
+                leading: Icon(Icons.folder_outlined),
+                title: Text(s.name),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            )),
+          ],
+        ),
+      );
+      if (choice is int?) {
+        exportSpaceId = choice;
+      } else if (!mounted) {
+        return;
+      }
+    }
+
+    // 第二步：选择是否包含照片
     final includePhotos = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -54,7 +91,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
     setState(() => _exporting = true);
     try {
-      final json = await _db.exportToJson();
+      final json = await _db.exportToJson(spaceId: exportSpaceId);
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       String filePath;
@@ -69,7 +106,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         archive.addFile(ArchiveFile('生活记录备份.json', jsonBytes.length, jsonBytes));
 
         // 添加照片
-        final photoFilenames = await _collectAllPhotoFilenames();
+        final photoFilenames = await _collectAllPhotoFilenames(exportSpaceId);
         for (final fileName in photoFilenames) {
           try {
             final bytes = await PhotoService().getPhotoBytes(fileName);
@@ -171,8 +208,8 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
   }
 
   /// 收集所有记录中用到的照片文件名
-  Future<Set<String>> _collectAllPhotoFilenames() async {
-    final allEntries = await _db.getAllEntries();
+  Future<Set<String>> _collectAllPhotoFilenames([int? spaceId]) async {
+    final allEntries = await _db.getAllEntries(spaceId: spaceId);
     final filenames = <String>{};
     for (final entry in allEntries) {
       filenames.addAll(entry.photoFilenames);
