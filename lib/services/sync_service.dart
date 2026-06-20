@@ -261,6 +261,28 @@ class SyncService {
     }
   }
 
+  /// 从坚果云下载指定备份文件的原始字节（用于 ZIP）
+  static Future<List<int>> downloadBackupBytes(
+      SyncConfig config, String fileName) async {
+    final client = http.Client();
+    try {
+      final fileUrl =
+          '${config.fullUrl}${Uri.encodeComponent(_dirName)}/${Uri.encodeComponent(fileName)}';
+      final req = http.Request('GET', Uri.parse(fileUrl));
+      req.headers['Authorization'] = config.basicAuth;
+
+      final resp = await client
+          .send(req)
+          .timeout(const Duration(seconds: 60));
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw WebDavException('下载失败', resp.statusCode);
+      }
+      return await resp.stream.toBytes();
+    } finally {
+      client.close();
+    }
+  }
+
   /// 从坚果云下载指定备份文件的 JSON 文本
   static Future<String> downloadBackup(
       SyncConfig config, String fileName) async {

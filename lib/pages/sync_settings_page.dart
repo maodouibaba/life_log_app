@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive_io.dart';
 import '../services/sync_service.dart';
+import '../services/photo_service.dart';
 import '../database/app_database.dart';
 
 /// 网络同步页面
@@ -258,18 +259,46 @@ class _WebDavTabState extends State<_WebDavTab> {
 
     _setStatus('正在下载...');
     try {
-      final json = await SyncService.downloadBackup(_config!, file.name);
-      if (json == null) {
-        _setStatus('❌ 下载失败', isError: true);
-        return;
+      final isZip = file.name.endsWith('.zip');
+      String json;
+      int restoredPhotos = 0;
+
+      if (isZip) {
+        // 下载 ZIP，提取 JSON + 恢复照片
+        final bytes = await SyncService.downloadBackupBytes(_config!, file.name);
+        final archive = ZipDecoder().decodeBytes(bytes);
+        String? jsonContent;
+        for (final af in archive) {
+          if (af.name.endsWith('.json')) {
+            jsonContent = String.fromCharCodes(af.content);
+          } else if (af.name.startsWith('photos/') && !af.name.endsWith('/')) {
+            final photoName = af.name.substring('photos/'.length);
+            final photoDir = await PhotoService().getPhotoDir();
+            await File('${photoDir.path}/$photoName').writeAsBytes(af.content);
+            restoredPhotos++;
+          }
+        }
+        if (jsonContent == null) {
+          _setStatus('❌ ZIP 中未找到备份数据', isError: true);
+          return;
+        }
+        json = jsonContent;
+      } else {
+        final result = await SyncService.downloadBackup(_config!, file.name);
+        if (result == null) {
+          _setStatus('❌ 下载失败', isError: true);
+          return;
+        }
+        json = result;
       }
+
       final db = AppDatabase();
       if (restoreType == 'replace') {
         await db.importFromJson(json);
-        _setStatus('✅ 已全量替换');
+        _setStatus('✅ 已全量替换${restoredPhotos > 0 ? '（含 $restoredPhotos 张照片）' : ''}');
       } else {
         final result = await db.mergeFromJson(json);
-        _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
+        _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条${restoredPhotos > 0 ? '，恢复 $restoredPhotos 张照片' : ''}');
       }
     } catch (e) {
       _setStatus('❌ 恢复异常：$e', isError: true);
@@ -611,16 +640,23 @@ class _ICloudTabState extends State<_ICloudTab> {
         return;
       }
 
-      // 读取文件内容
+      // 读取文件内容，如果是 ZIP 同时恢复照片
       String content;
-      if (fileName.endsWith('.zip')) {
+      int restoredPhotos = 0;
+      final isZip = fileName.endsWith('.zip');
+      if (isZip) {
         final bytes = await File(filePath).readAsBytes();
         final archive = ZipDecoder().decodeBytes(bytes);
         ArchiveFile? jsonFile;
         for (final af in archive) {
           if (af.name.endsWith('.json')) {
             jsonFile = af;
-            break;
+          } else if (af.name.startsWith('photos/') && !af.name.endsWith('/')) {
+            // 恢复照片到 app 目录
+            final photoName = af.name.substring('photos/'.length);
+            final photoDir = await PhotoService().getPhotoDir();
+            await File('${photoDir.path}/$photoName').writeAsBytes(af.content);
+            restoredPhotos++;
           }
         }
         if (jsonFile == null) {
@@ -711,10 +747,10 @@ class _ICloudTabState extends State<_ICloudTab> {
       _setStatus('正在恢复...');
       if (restoreType == 'replace') {
         await _db.importFromJson(content);
-        _setStatus('✅ 已全量替换');
+        _setStatus('✅ 已全量替换${restoredPhotos > 0 ? '（含 $restoredPhotos 张照片）' : ''}');
       } else {
         final result = await _db.mergeFromJson(content);
-        _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
+        _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条${restoredPhotos > 0 ? '，恢复 $restoredPhotos 张照片' : ''}');
       }
     } catch (e) {
       _setStatus('❌ 恢复失败：$e', isError: true);

@@ -322,13 +322,44 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
 
     setState(() => _importing = true);
     try {
-      final jsonText = await File(filePath).readAsString();
+      final isZip = fileName.endsWith('.zip');
+      String jsonText;
+      int restoredPhotos = 0;
+
+      if (isZip) {
+        // 读取 ZIP，提取 JSON + 恢复照片
+        final bytes = await File(filePath).readAsBytes();
+        final archive = ZipDecoder().decodeBytes(bytes);
+        String? jsonContent;
+        for (final af in archive) {
+          if (af.name.endsWith('.json')) {
+            jsonContent = String.fromCharCodes(af.content);
+          } else if (af.name.startsWith('photos/') && !af.name.endsWith('/')) {
+            // 提取照片到 app 的照片目录
+            final photoName = af.name.substring('photos/'.length);
+            final photoDir = await PhotoService().getPhotoDir();
+            await File('${photoDir.path}/$photoName').writeAsBytes(af.content);
+            restoredPhotos++;
+          }
+        }
+        if (jsonContent == null) {
+          setState(() => _importing = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('❌ ZIP 中未找到备份数据')),
+          );
+          return;
+        }
+        jsonText = jsonContent;
+      } else {
+        jsonText = await File(filePath).readAsString();
+      }
+
       if (restoreType == 'replace') {
         await _db.importFromJson(jsonText);
         setState(() => _importing = false);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('恢复成功：$filePath')),
+          SnackBar(content: Text('恢复成功${restoredPhotos > 0 ? '（含 $restoredPhotos 张照片）' : ''}：$filePath')),
         );
       } else {
         final result = await _db.mergeFromJson(jsonText);
@@ -336,7 +367,7 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条'),
+            content: Text('合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条${restoredPhotos > 0 ? '，恢复 $restoredPhotos 张照片' : ''}'),
           ),
         );
       }
