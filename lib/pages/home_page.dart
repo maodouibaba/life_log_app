@@ -316,7 +316,7 @@ class _HomePageState extends State<HomePage> {
     pwdController.dispose();
   }
 
-  /// 显示 AI 助写设置弹窗
+  /// 显示 AI 设置弹窗
   Future<void> _showAISettings() async {
     final settings = AISettings();
     final keyController = TextEditingController(text: settings.apiKey);
@@ -336,7 +336,7 @@ class _HomePageState extends State<HomePage> {
               Icon(Icons.auto_awesome,
                   color: Theme.of(ctx).colorScheme.primary),
               const SizedBox(width: 8),
-              const Text('AI 助写设置'),
+              const Text('AI 设置'),
             ],
           ),
           content: SingleChildScrollView(
@@ -345,16 +345,15 @@ class _HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '开启后，在输入事项简介和详细情况时，'
-                  '可使用 AI 对文本进行润色整理。',
+                  '配置 AI 供应商和 API Key，用于 AI 助写和 AI 总结功能。',
                   style: TextStyle(fontSize: 13),
                 ),
                 const SizedBox(height: 16),
                 // 开关
                 SwitchListTile(
-                  title: const Text('启用 AI 助写'),
+                  title: const Text('启用 AI 助写（输入框显示润色按钮）'),
                   subtitle: Text(
-                    enabled ? '输入框将显示 AI 润色按钮' : 'AI 功能已关闭',
+                    enabled ? '已启用，输入框将显示 ✨ 润色按钮' : 'AI 助写已关闭',
                     style: const TextStyle(fontSize: 12),
                   ),
                   value: enabled,
