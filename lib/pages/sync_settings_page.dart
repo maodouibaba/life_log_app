@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive_io.dart';
 import '../services/sync_service.dart';
-import '../services/icloud_service.dart';
 import '../database/app_database.dart';
 
 /// 网络同步页面
@@ -528,20 +531,10 @@ class _ICloudTab extends StatefulWidget {
 }
 
 class _ICloudTabState extends State<_ICloudTab> {
-  final ICloudService _service = ICloudService();
   final AppDatabase _db = AppDatabase();
-  String? _selectedDir;
-  List<Map<String, dynamic>> _files = [];
-  bool _loadingFiles = false;
   bool _uploading = false;
   String? _statusMsg;
   bool _statusIsError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDir = _service.lastSelectedDir;
-  }
 
   void _setStatus(String msg, {bool isError = false}) {
     setState(() {
@@ -550,128 +543,148 @@ class _ICloudTabState extends State<_ICloudTab> {
     });
   }
 
-  Future<void> _pickDir() async {
-    final dir = await _service.pickDirectory();
-    if (dir != null) {
-      setState(() => _selectedDir = dir);
-      _refreshFiles();
-    }
-  }
-
-  Future<void> _refreshFiles() async {
-    if (_selectedDir == null) return;
-    setState(() => _loadingFiles = true);
-    try {
-      _files = await _service.listBackupFiles(_selectedDir!);
-    } catch (e) {
-      _setStatus('❌ 刷新失败：$e', isError: true);
-    }
-    setState(() => _loadingFiles = false);
-  }
-
+  /// 导出备份到 iCloud Drive（通过系统文件选择器）
   Future<void> _uploadToICloud() async {
-    if (_selectedDir == null) return;
     setState(() => _uploading = true);
-    _setStatus('正在上传...');
+    _setStatus('正在生成备份...');
     try {
       final json = await _db.exportToJson();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = '生活记录备份_$timestamp.json';
-      final ok = await _service.saveBackupFile(_selectedDir!, fileName, json);
-      if (ok) {
-        _setStatus('✅ 上传成功');
-        _refreshFiles();
+
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: '保存备份到 iCloud Drive',
+        fileName: fileName,
+        bytes: utf8.encode(json),
+      );
+
+      if (savePath != null) {
+        _setStatus('✅ 备份已保存');
       } else {
-        _setStatus('❌ 上传失败', isError: true);
+        _setStatus('已取消');
       }
     } catch (e) {
-      _setStatus('❌ 上传异常：$e', isError: true);
+      _setStatus('❌ 导出失败：$e', isError: true);
     }
     setState(() => _uploading = false);
   }
 
-  Future<void> _restoreFromFile(String filePath, String fileName) async {
-    final theme = Theme.of(context);
-    final restoreType = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('选择恢复模式'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('备份文件：$fileName', style: const TextStyle(fontSize: 13)),
-              const SizedBox(height: 16),
-              const Text('请选择恢复方式：', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: Icon(Icons.swap_horiz, color: theme.colorScheme.primary),
-                  title: const Text('合并到本地'),
-                  subtitle: const Text(
-                    '将云端与本地数据合并，冲突时保留较新的版本。本地数据不会丢失。',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  onTap: () => Navigator.pop(ctx, 'merge'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: Icon(Icons.file_copy, color: theme.colorScheme.error),
-                  title: const Text('覆盖恢复'),
-                  subtitle: const Text(
-                    '清空所有本地数据，替换为云端备份。此操作不可撤销。',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  onTap: () => Navigator.pop(ctx, 'replace'),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    if (restoreType == null || !mounted) return;
+  /// 从 iCloud Drive 选择备份文件并恢复
+  Future<void> _pickAndRestore() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '选择备份文件',
+        type: FileType.custom,
+        allowedExtensions: ['json', 'zip'],
+      );
+      if (result == null || result.files.isEmpty) return;
 
-    if (restoreType == 'replace') {
-      final confirm = await showDialog<bool>(
+      final file = result.files.first;
+      final filePath = file.path;
+      final fileName = file.name;
+      if (filePath == null) {
+        _setStatus('❌ 无法读取文件', isError: true);
+        return;
+      }
+
+      // 读取文件内容
+      String content;
+      if (fileName.endsWith('.zip')) {
+        final bytes = await File(filePath).readAsBytes();
+        final archive = ZipDecoder().decodeBytes(bytes);
+        ArchiveFile? jsonFile;
+        for (final af in archive) {
+          if (af.name.endsWith('.json')) {
+            jsonFile = af;
+            break;
+          }
+        }
+        if (jsonFile == null) {
+          _setStatus('❌ ZIP 中未找到 JSON 备份', isError: true);
+          return;
+        }
+        content = String.fromCharCodes(jsonFile.content);
+      } else {
+        content = await File(filePath).readAsString();
+      }
+
+      // 选择恢复模式
+      final theme = Theme.of(context);
+      final restoreType = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('确认覆盖恢复'),
-          content: const Text(
-            '此操作将清空所有本地数据并替换为备份内容，\n'
-            '不可撤销。建议先上传一份当前数据的备份。\n\n确定继续吗？',
+          title: const Text('选择恢复模式'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('备份文件：$fileName', style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 16),
+                const Text('请选择恢复方式：', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: Icon(Icons.swap_horiz, color: theme.colorScheme.primary),
+                    title: const Text('合并到本地'),
+                    subtitle: const Text(
+                      '将云端与本地数据合并，冲突时保留较新的版本。本地数据不会丢失。',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onTap: () => Navigator.pop(ctx, 'merge'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: Icon(Icons.file_copy, color: theme.colorScheme.error),
+                    title: const Text('覆盖恢复'),
+                    subtitle: const Text(
+                      '清空所有本地数据，替换为备份内容。此操作不可撤销。',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onTap: () => Navigator.pop(ctx, 'replace'),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('确定覆盖',
-                  style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
             ),
           ],
         ),
       );
-      if (confirm != true || !mounted) return;
-    }
+      if (restoreType == null || !mounted) return;
 
-    try {
-      final content = await _service.readBackupFile(filePath);
-      if (content == null) {
-        _setStatus('❌ 读取文件失败', isError: true);
-        return;
+      if (restoreType == 'replace') {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('确认覆盖恢复'),
+            content: const Text(
+              '此操作将清空所有本地数据并替换为备份内容，\n'
+              '不可撤销。建议先导出一份当前数据的备份。\n\n确定继续吗？',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('确定覆盖',
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true || !mounted) return;
       }
+
+      _setStatus('正在恢复...');
       if (restoreType == 'replace') {
         await _db.importFromJson(content);
         _setStatus('✅ 已全量替换');
@@ -680,31 +693,7 @@ class _ICloudTabState extends State<_ICloudTab> {
         _setStatus('✅ 合并完成：新增 ${result['added_entries']} 条，更新 ${result['updated_entries']} 条');
       }
     } catch (e) {
-      _setStatus('❌ 恢复异常：$e', isError: true);
-    }
-  }
-
-  Future<void> _deleteFile(String filePath) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除备份'),
-        content: Text('确定要删除此备份吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('删除',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      await _service.deleteBackupFile(filePath);
-      _refreshFiles();
+      _setStatus('❌ 恢复失败：$e', isError: true);
     }
   }
 
@@ -715,7 +704,6 @@ class _ICloudTabState extends State<_ICloudTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // iCloud 说明
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -726,143 +714,52 @@ class _ICloudTabState extends State<_ICloudTab> {
                   children: [
                     Icon(Icons.cloud_queue, size: 18, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    const Text('iCloud Drive 同步',
+                    const Text('iCloud Drive',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '通过 iCloud Drive 文件共享实现多设备同步。\n'
-                  '选择一个 iCloud Drive 目录，备份文件将保存到该目录，'
-                  '其他设备可从同一目录读取恢复。',
+                  '通过系统文件选择器读写 iCloud Drive，无需额外配置。\n'
+                  '导出：选择 iCloud Drive 中的目录保存备份\n'
+                  '恢复：从 iCloud Drive 选择备份文件恢复',
                   style: TextStyle(
                     fontSize: 13,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _pickDir,
-                    icon: const Icon(Icons.folder_open, size: 18),
-                    label: Text(
-                      _selectedDir != null
-                          ? '已选择目录'
-                          : '选择 iCloud Drive 目录',
-                    ),
-                  ),
-                ),
-                if (_selectedDir != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      _selectedDir!,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 16),
 
-        if (_selectedDir != null)
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _uploading ? null : _uploadToICloud,
-              icon: _uploading
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: Text(_uploading ? '上传中...' : '上传备份到 iCloud'),
-            ),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _uploading ? null : _uploadToICloud,
+            icon: _uploading
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.cloud_upload_outlined, size: 18),
+            label: Text(_uploading ? '生成中...' : '导出备份到 iCloud Drive'),
           ),
-        if (_selectedDir != null)
-          const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 12),
 
-        // 文件列表
-        if (_selectedDir != null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text('iCloud 备份文件',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurfaceVariant)),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: _refreshFiles,
-                        icon: Icon(Icons.refresh, size: 16,
-                            color: theme.colorScheme.primary),
-                        label: Text('刷新',
-                            style: TextStyle(
-                                color: theme.colorScheme.primary, fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                  if (_loadingFiles)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
-                  else if (_files.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: Text('暂无备份文件\n请先上传或手动放入 iCloud Drive')),
-                    )
-                  else
-                    ..._files.map((f) => ListTile(
-                          dense: true,
-                          leading: Icon(Icons.description_outlined, size: 18,
-                              color: theme.colorScheme.primary),
-                          title: Text(f['name'] as String,
-                              style: const TextStyle(fontSize: 13)),
-                          subtitle: Text(
-                            '${_service.formatSize(f['size'] as int)} · ${f['modified']}',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSurfaceVariant),
-                          ),
-                          trailing: PopupMenuButton<String>(
-                            itemBuilder: (ctx) => [
-                              const PopupMenuItem(
-                                  value: 'restore', child: Text('恢复'),
-                                  ),
-                              const PopupMenuItem(
-                                  value: 'delete', child: Text('删除'),
-                                  ),
-                            ],
-                            onSelected: (v) {
-                              if (v == 'restore') {
-                                _restoreFromFile(
-                                    f['path'] as String, f['name'] as String);
-                              } else if (v == 'delete') {
-                                _deleteFile(f['path'] as String);
-                              }
-                            },
-                          ),
-                        )),
-                ],
-              ),
-            ),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _uploading ? null : _pickAndRestore,
+            icon: const Icon(Icons.cloud_download_outlined, size: 18),
+            label: const Text('从 iCloud Drive 选择备份恢复'),
           ),
+        ),
 
         if (_statusMsg != null)
           Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.only(top: 16),
             child: Text(_statusMsg!,
                 style: TextStyle(
                   color: _statusIsError
