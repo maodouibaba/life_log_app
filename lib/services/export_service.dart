@@ -128,8 +128,24 @@ class ExportService {
 
       sheet.appendRow(rowData);
 
-      // 照片列显示相对路径（解压 ZIP 后 photos/ 与 Excel 在同一目录）
-      // 因 excel 包不支持超链接，路径文本已足够用户定位
+      // 照片列用 HYPERLINK 公式设为可点击链接
+      if (includePhotos) {
+        final photoCol = header.length - 1;
+        final dataRow = sheet.maxRows;
+        final cell = sheet.cell(CellIndex.indexByColumnRow(
+            columnIndex: photoCol, rowIndex: dataRow - 1));
+        final photoStr = cell.value?.toString() ?? '';
+        if (photoStr.isNotEmpty) {
+          final photos = photoStr.split('; ');
+          if (photos.length == 1) {
+            // 单张照片：显示名称为可点击链接
+            cell.setFormula('=HYPERLINK("${photos[0]}","${photos[0]}")');
+          } else {
+            // 多张照片：显示全部名称，链接到第一张
+            cell.setFormula('=HYPERLINK("${photos[0]}","$photoStr")');
+          }
+        }
+      }
     }
 
     // 设置列宽
