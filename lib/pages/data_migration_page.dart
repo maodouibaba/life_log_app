@@ -9,6 +9,7 @@ import 'package:archive/archive_io.dart';
 import '../database/app_database.dart';
 import '../services/seed_data.dart';
 import '../services/photo_service.dart';
+import '../services/backup_crypto.dart';
 
 /// 数据备份页面
 /// 导出全部数据为 JSON，支持分享和导入恢复
@@ -89,9 +90,60 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
     );
     if (includePhotos == null || !mounted) return;
 
+    // 第三步：选择是否加密
+    final passwordController = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('加密备份（可选）'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('设置密码后，备份文件将被 AES-256 加密，\n恢复时需要输入密码。\n',
+                style: TextStyle(fontSize: 13)),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: '留空则不加密',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('不加密')),
+          FilledButton(
+            onPressed: () {
+              final pwd = passwordController.text.trim();
+              if (pwd.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('请输入密码或选择「不加密」')),
+                );
+                return;
+              }
+              Navigator.pop(ctx, pwd);
+            },
+            child: const Text('加密并导出')),
+        ],
+      ),
+    );
+    passwordController.dispose();
+    if (password == null || !mounted) return;
+    final isEncrypted = password.isNotEmpty;
+
     setState(() => _exporting = true);
     try {
-      final json = await _db.exportToJson(spaceId: exportSpaceId);
+      var json = await _db.exportToJson(spaceId: exportSpaceId);
+      if (isEncrypted) {
+        json = BackupCrypto.encrypt(json, password);
+      }
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       String filePath;
@@ -352,6 +404,48 @@ class _DataMigrationPageState extends State<DataMigrationPage> {
         jsonText = jsonContent;
       } else {
         jsonText = await File(filePath).readAsString();
+      }
+
+      // 检测是否为加密文件，是则要求输入密码
+      if (BackupCrypto.isEncrypted(jsonText)) {
+        final pwdController = TextEditingController();
+        final pwd = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('此备份已加密'),
+            content: TextField(
+              controller: pwdController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: '请输入密码',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, pwdController.text.trim()),
+                child: const Text('解密并恢复')),
+            ],
+          ),
+        );
+        pwdController.dispose();
+        if (pwd == null || pwd.isEmpty || !mounted) {
+          setState(() => _importing = false);
+          return;
+        }
+        try {
+          jsonText = BackupCrypto.decrypt(jsonText, pwd);
+        } catch (e) {
+          setState(() => _importing = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('❌ 解密失败：密码错误或文件损坏')),
+          );
+          return;
+        }
       }
 
       if (restoreType == 'replace') {

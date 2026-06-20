@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive_io.dart';
 import '../services/sync_service.dart';
 import '../services/photo_service.dart';
+import '../services/backup_crypto.dart';
 import '../database/app_database.dart';
 
 /// 网络同步页面
@@ -290,6 +291,45 @@ class _WebDavTabState extends State<_WebDavTab> {
           return;
         }
         json = result;
+      }
+
+      // 检测加密并解密
+      if (BackupCrypto.isEncrypted(json)) {
+        final pwdController = TextEditingController();
+        final pwd = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('此备份已加密'),
+            content: TextField(
+              controller: pwdController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: '请输入密码',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, pwdController.text.trim()),
+                child: const Text('解密并恢复')),
+            ],
+          ),
+        );
+        pwdController.dispose();
+        if (pwd == null || pwd.isEmpty) {
+          _setStatus('已取消');
+          return;
+        }
+        try {
+          json = BackupCrypto.decrypt(json, pwd);
+        } catch (e) {
+          _setStatus('❌ 解密失败：密码错误或文件损坏', isError: true);
+          return;
+        }
       }
 
       final db = AppDatabase();
@@ -666,6 +706,45 @@ class _ICloudTabState extends State<_ICloudTab> {
         content = String.fromCharCodes(jsonFile.content);
       } else {
         content = await File(filePath).readAsString();
+      }
+
+      // 检测加密并解密
+      if (BackupCrypto.isEncrypted(content)) {
+        final pwdController = TextEditingController();
+        final pwd = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('此备份已加密'),
+            content: TextField(
+              controller: pwdController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: '请输入密码',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, pwdController.text.trim()),
+                child: const Text('解密并恢复')),
+            ],
+          ),
+        );
+        pwdController.dispose();
+        if (pwd == null || pwd.isEmpty) {
+          _setStatus('已取消');
+          return;
+        }
+        try {
+          content = BackupCrypto.decrypt(content, pwd);
+        } catch (e) {
+          _setStatus('❌ 解密失败：密码错误或文件损坏', isError: true);
+          return;
+        }
       }
 
       // 选择恢复模式
